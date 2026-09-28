@@ -242,5 +242,13 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,macos,visualstudiocode,git
 
-### Sensitive data
-config
+# ---- interim data: never commit spreadsheets or pipeline output, even by accident
+config/pseudonymize.yaml
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+raw/
+key/
+derived/
+freetext/

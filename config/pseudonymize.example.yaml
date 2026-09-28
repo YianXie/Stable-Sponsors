@@ -1,0 +1,139 @@
+# Copy to config/pseudonymize.yaml (gitignored) and set private_root.
+#
+# Column names match the 2026 and 2027 files as received. Header matching
+# ignores case and repeated spaces, so "First Preference " (trailing space, as
+# in the 2026 international form) still matches "First Preference".
+#
+# Everything is written under private_root: key/, derived/, freetext/.
+# Both private_root and raw_dir must be outside the repository; the scripts
+# refuse to run otherwise.
+
+private_root: "~/interim-private"  # set this
+raw_dir:
+  "raw" # relative to private_root, or an absolute path;
+  # must contain 2026/ and 2027/
+
+match_floor: 0.55 # email<->name scores below this are never proposed
+duplicate_submissions: last # two responses from one address: last | first | error
+
+cycles:
+  "2026":
+    # Every Singapore trip code that should appear on the placement sheet. A listed
+    # code with no placement row is kept as a course with ran = unknown and flagged.
+    expected_sg_codes:
+      [
+        "SING-1", "SING-2", "SING-3", "SING-4", "SING-5", "SING-6",
+        "SING-7", "SING-8", "SING-9", "SING-10", "SING-11", "SING-12",
+      ]
+    # Codes the office confirms did not run (ran = no instead of unknown), e.g.
+    # not_run_codes: ["SING-9"]
+    not_run_codes: []
+    offerings: # international only; includes courses that did not run
+      path: "2026/00_course_offerings.xlsx"
+      name_col: "Course Name"
+      code_col: "Trip Code" # filled only for courses that ran; blank = did not run
+      city_col: "Arrival City"
+      country_col: "Country"
+    preferences: # 2026 had a single international round
+      - round: intl_r1
+        path: "2026/01_international_selections.xlsx"
+        email_col: "Email Address"
+        name_col: "Name (First & Last)"
+        rank_cols:
+          [
+            "First Preference",
+            "Second Preference",
+            "Third Preference",
+            "Fourth Preference",
+            "Fifth Preference",
+            "Sixth Preference",
+            "Seventh Preference",
+          ]
+        freetext_cols:
+          [
+            "Any important comments or priorities regarding your co-sponsor?",
+            "Please share relevant and notable experience, certifications, and skills connected to your preferred courses.",
+            "Any final questions or comments?",
+          ]
+      - round: sg
+        path: "2026/02_singapore_selections.xlsx"
+        email_col: "Email Address"
+        name_col: "Name (First & Last)"
+        rank_cols:
+          [
+            "First Preference",
+            "Second Preference",
+            "Third Preference",
+            "Fourth Preference",
+            "Fifth Preference",
+          ]
+        freetext_cols:
+          [
+            "Please share relevant and notable experience, certifications, and skills connected to your preferred courses.",
+            "Any final questions or comments?",
+          ]
+    placements:
+      path: "2026/03_final_placements.xlsx"
+      code_col: "Trip Code"
+      name_col: "Course Name"
+      sponsor_cols: ["Sponsor 1", "Sponsor 2"]
+    # No repeaters file for 2026: repeat status is recorded as unknown, not "no".
+
+  "2027":
+    expected_sg_courses: 11 # project description: 54 international + 11 Singapore
+    # If you know the 2027 Singapore codes, list them instead (catches a missing one):
+    # expected_sg_codes: ["SING-1", "SING-2", ...]
+    offerings:
+      path: "2027/00_course_offerings.xlsx"
+      name_col: "Course Name"
+      city_col: "Arrival City"
+      country_col: "Country"
+    repeaters:
+      path: "2027/01_repeating_or_not.xlsx"
+      email_col: "Email Address"
+      prior_course_col: "Prior Course"
+    preferences:
+      - round: intl_r1
+        path: "2027/02_international_selections_round1.xlsx"
+        email_col: "Email Address"
+        rank_cols:
+          [
+            "First Preference",
+            "Second Preference",
+            "Third Preference",
+            "Fourth Preference",
+            "Fifth Preference",
+            "Sixth Preference",
+            "Seventh Preference",
+          ]
+        freetext_cols:
+          [
+            "How can you uniquely enhance student learning or safety on a specific course?",
+            "Any notable priorities you would like to share?",
+            "Any final questions or comments?",
+          ]
+      - round: intl_r2
+        path: "2027/03_international_selections_round2.xlsx"
+        email_col: "Email Address"
+        rank_cols: ["First Preference", "Second Preference", "Third Preference"]
+      - round: sg
+        path: "2027/04_singapore_selections.xlsx"
+        email_col: "Email Address"
+        rank_cols:
+          [
+            "First Preference",
+            "Second Preference",
+            "Third Preference",
+            "Fourth Preference",
+            "Fifth Preference",
+          ]
+        freetext_cols:
+          [
+            "How can you uniquely enhance student learning or safety on a specific course?",
+            "Any additional comments?",
+          ]
+    placements:
+      path: "2027/05_final_placements.xlsx"
+      code_col: "Trip Code"
+      name_col: "Course Name"
+      sponsor_cols: ["Sponsor 1", "Sponsor 2"]
