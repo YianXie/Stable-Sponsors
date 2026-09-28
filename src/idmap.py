@@ -251,6 +251,27 @@ def norm_course(s) -> str:
     return " ".join(s.split())
 
 
+# "(MALE)" / "(FEMALE)" after a course name on the forms marks which sponsor slot is
+# open: every course needs at least one male and one female sponsor, so once one is
+# pre-allocated only the other gender's slot is offered. Only the bracketed full word
+# counts, so a destination such as "Maldives - Male" is never cut.
+SLOT_TAG_RE = re.compile(r"\s*[\(\[]\s*(male|female)\s*[\)\]]\s*$", re.I)
+
+
+def split_slot_tag(s) -> tuple[str, str]:
+    """'Nepal Trek (MALE)' -> ('Nepal Trek', 'male'); untagged -> (s, '')."""
+    s = str(s).strip()
+    m = SLOT_TAG_RE.search(s)
+    if not m or not s[: m.start()].strip():
+        return s, ""
+    return s[: m.start()].strip(), m.group(1).lower()
+
+
+def course_key(s) -> str:
+    """Key for a course string on a form: the slot tag is not part of the course."""
+    return norm_course(split_slot_tag(s)[0])
+
+
 def norm_code(s) -> str:
     return re.sub(r"[^a-z0-9]", "", strip_accents(s).lower())
 
@@ -420,7 +441,7 @@ class CourseIndex:
 
         Upper-case methods need a human decision; lower-case ones need a check.
         """
-        raw = str(s).strip()
+        raw = split_slot_tag(s)[0]  # "(MALE)"/"(FEMALE)" names a slot, not a course
         n = norm_course(raw)
         if not n:
             return "", "blank", 0.0, ""

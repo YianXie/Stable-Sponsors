@@ -34,7 +34,8 @@ import pandas as pd
 
 from build_crosswalk import (ALIAS_DRAFT, ALIAS_FINAL, CAT_DRAFT, CAT_FINAL, ID_DRAFT, ID_FINAL,
                              is_yes, node_key)
-from idmap import NONE_COURSE, REPO_ROOT, load_config, norm_course, out_path, sha256_file
+from idmap import (NONE_COURSE, REPO_ROOT, course_key, load_config, out_path, sha256_file,
+                   split_slot_tag)
 from sources import load_all
 
 CODE_COLUMNS = ["req_certification", "co_sponsor_request", "medical_or_access_constraint",
@@ -76,7 +77,7 @@ def load_course_key(cfg):
         cid = r.course_id.strip()
         if not cid:
             raise SystemExit(f"course_alias.csv: no course_id on CSV line {r.Index + 2}")
-        k = (str(r.cycle), r.source, norm_course(r.raw_string))
+        k = (str(r.cycle), r.source, course_key(r.raw_string))
         if k in amap and amap[k] != cid:
             raise SystemExit(f"course_alias.csv: line {r.Index + 2} maps a string already "
                              "mapped to a different course")
@@ -146,7 +147,7 @@ def run(cfg, quiet=False):
                 continue
             prior = ""
             if rp.prior_raw:
-                prior = amap.get((k, "prior", norm_course(rp.prior_raw)), "")
+                prior = amap.get((k, "prior", course_key(rp.prior_raw)), "")
                 if not prior:
                     missing["prior course not in alias file"].append(f"{k} repeaters row {rp.row}")
             if t in rep:
@@ -156,6 +157,7 @@ def run(cfg, quiet=False):
         # ---- preference forms (one response per teacher per round, after identity mapping)
         submitted = defaultdict(set)
         ranked = defaultdict(set)
+        slot_genders = defaultdict(set)
         chosen = {}
         for r in cy.responses:
             t = tid_email(r.email, f"{k} {r.round} row {r.row}")
@@ -190,7 +192,7 @@ def run(cfg, quiet=False):
                 check(k, "gap_in_ranking", t, "", f"{r.round}: filled ranks {positions}")
             seen = set()
             for rank, raw in r.ranks:
-                cid = amap.get((k, r.channel, norm_course(raw)))
+                cid = amap.get((k, r.channel, course_key(raw)))
                 if not cid:
                     missing["preference string not in alias file"].append(
                         f"{k} {r.round} row {r.row} rank {rank}")
@@ -206,7 +208,11 @@ def run(cfg, quiet=False):
                 ctype = cat.get((k, cid), {}).get("course_type")
                 if ctype and ctype != r.channel:
                     check(k, "course_type_differs_from_form", t, cid, f"{r.round} rank {rank}")
-                prefs.append(dict(cycle=k, teacher_id=t, round=r.round, rank=rank, course_id=cid))
+                slot = split_slot_tag(raw)[1]
+                if slot:
+                    slot_genders[t].add(slot)
+                prefs.append(dict(cycle=k, teacher_id=t, round=r.round, rank=rank, course_id=cid,
+                                  slot_gender=slot))
             for col, txt in r.freetext.items():
                 freetext.append((k, t, r.round, col, txt))
 
@@ -245,11 +251,15 @@ def run(cfg, quiet=False):
                 submitted_sg=(t in submitted["sg"]) if "sg" in cy.rounds else "",
                 is_placed=bool(mine),
                 # unknown for a cycle without a repeat file: they may be repeaters
+                slot_genders_ranked="|".join(sorted(slot_genders.get(t, ()))),
                 placed_without_submission=("" if (cy.repeaters is None and mine and not any_form)
                                            else bool(mine) and not any_form and t not in rep),
             ))
             if len(mine) > 1:
                 check(k, "placed_on_more_than_one_course", t, "|".join(mine))
+            if len(slot_genders.get(t, ())) > 1:
+                check(k, "ranked_both_male_and_female_slots", t, "",
+                      "picked slots tagged for both genders; check the form data")
             if t in rep:
                 if t in submitted["intl_r1"]:
                     check(k, "repeater_also_submitted_round1", t)
@@ -325,8 +335,10 @@ def run(cfg, quiet=False):
     tables = {
         "teachers": pd.DataFrame(teachers, columns=[
             "cycle", "teacher_id", "is_repeater", "prior_course_id", "submitted_intl_r1",
-            "submitted_intl_r2", "submitted_sg", "is_placed", "placed_without_submission"]),
-        "preferences": pd.DataFrame(prefs, columns=["cycle", "teacher_id", "round", "rank", "course_id"]),
+            "submitted_intl_r2", "submitted_sg", "is_placed", "slot_genders_ranked",
+            "placed_without_submission"]),
+        "preferences": pd.DataFrame(prefs, columns=["cycle", "teacher_id", "round", "rank", "course_id",
+                                                    "slot_gender"]),
         "placements": pd.DataFrame(places, columns=["cycle", "course_id", "sponsor_slot",
                                                     "teacher_id", "status"]),
         "courses": pd.DataFrame(courses, columns=["cycle", "course_id", "course_type", "in_offerings",

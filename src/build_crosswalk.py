@@ -39,6 +39,7 @@ import pandas as pd
 from idmap import (
     NONE_COURSE,
     CourseIndex,
+    course_key,
     _ratio,
     load_config,
     looks_like_email,
@@ -120,7 +121,20 @@ def read_prior(cfg, final_rel, draft_rel, key_fn):
     for rel in (final_rel, draft_rel):
         p = out_path(cfg, rel)
         if p.exists():
-            frames.append(pd.read_csv(p, dtype=str).fillna(""))
+            df = pd.read_csv(p, dtype=str).fillna("")
+            lacking = REQUIRED_COLS[key_fn] - set(df.columns)
+            if lacking:  # written by an earlier version of the pipeline: set it aside
+                legacy = out_path(cfg, "key/backup/legacy")
+                legacy.mkdir(parents=True, exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                p.rename(legacy / f"{p.stem}.{ts}{p.suffix}")
+                print(
+                    f"  ! {rel} is in an older format (no {sorted(lacking)} column); "
+                    "moved to key/backup/legacy/ and ignored. Its confirmations are not "
+                    "carried over."
+                )
+                continue
+            frames.append(df)
             used.append(rel)
     if not frames:
         return None, None
@@ -135,11 +149,18 @@ def id_key(r):
 
 
 def alias_key(r):
-    return (str(r["cycle"]), r["source"], norm_course(r["raw_string"]))
+    return (str(r["cycle"]), r["source"], course_key(r["raw_string"]))
 
 
 def cat_key(r):
     return (str(r["cycle"]), r["course_id"])
+
+
+REQUIRED_COLS = {
+    id_key: {"teacher_id", "identifier", "confirmed", "notes"},
+    alias_key: {"cycle", "source", "raw_string", "course_id", "confirmed", "notes"},
+    cat_key: {"cycle", "course_id", "course_type", "confirmed", "notes"},
+}
 
 
 def issued_ids(cfg) -> set:
@@ -585,7 +606,7 @@ def build_courses(cy, prior_alias, prior_cat):
         pidx.add(code, [nm], [code])
 
     def locked(source, raw, valid):
-        cid = prior_alias.get((key, source, norm_course(raw)))
+        cid = prior_alias.get((key, source, course_key(raw)))
         return cid if cid and valid(cid) else ""
 
     by_code = {norm_code(c): c for c in pnames}
@@ -787,14 +808,14 @@ def build_courses(cy, prior_alias, prior_cat):
     for r in cy.responses:
         for _, raw in r.ranks:
             e = strings.setdefault(
-                (r.channel, norm_course(raw)), {"raw": raw, "rounds": set(), "uses": 0}
+                (r.channel, course_key(raw)), {"raw": raw, "rounds": set(), "uses": 0}
             )
             e["rounds"].add(r.round)
             e["uses"] += 1
     for rp in cy.repeaters or []:
         if rp.prior_raw:
             e = strings.setdefault(
-                ("prior", norm_course(rp.prior_raw)),
+                ("prior", course_key(rp.prior_raw)),
                 {"raw": rp.prior_raw, "rounds": {"repeaters"}, "uses": 0},
             )
             e["uses"] += 1
@@ -1032,7 +1053,7 @@ def flag_off_list(cycles, id_rows, alias_all):
     """
     tid_of = {node_key(r["identifier"]): r["teacher_id"] for r in id_rows}
     amap = {
-        (a["cycle"], a["source"], norm_course(a["raw_string"])): a["course_id"]
+        (a["cycle"], a["source"], course_key(a["raw_string"])): a["course_id"]
         for a in alias_all
         if a["course_id"]
     }
@@ -1042,7 +1063,7 @@ def flag_off_list(cycles, id_rows, alias_all):
         for r in cy.responses:
             t = tid_of.get(("E", r.email))
             for _, raw in r.ranks:
-                cid = amap.get((cy.key, r.channel, norm_course(raw)))
+                cid = amap.get((cy.key, r.channel, course_key(raw)))
                 if t and cid:
                     ranked[t].add(cid)
         for s in cy.slots:

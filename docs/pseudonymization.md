@@ -82,11 +82,16 @@ run. Upper-case methods need a decision.
   proposed for the one listed Singapore code with no placement row (SING-9 in 2026).
   Confirm it only if the office agrees it names that course.
 
-`LOCK_CONFLICT` means something you confirmed earlier now
-disagrees with an exact match in the data (e.g. a "did not run" course now
-appears in placements) and has been unconfirmed. `LOCK_CONFLICT` means something you confirmed earlier now
-disagrees with an exact match in the data (e.g. a "did not run" course now
-appears in placements) and has been unconfirmed. Set `course_id` to `NONE` for a
+- Form options such as `Nepal Trek (MALE)` / `Nepal Trek (FEMALE)` name the course
+  plus the open sponsor slot (every course needs at least one male and one female
+  sponsor). The tag is ignored for matching, so both variants share one alias row,
+  and kept as `slot_gender` in `preferences.csv`. `teachers.csv` gets
+  `slot_genders_ranked`; a teacher who picked both kinds of slot is listed in
+  `checks.csv`. Only the bracketed full words count, never "- Male".
+
+`LOCK_CONFLICT` means something you confirmed earlier now disagrees with an exact
+match in the data (e.g. a "did not run" course now appears in placements) and has
+been unconfirmed. Set `course_id` to `NONE` for a
 string that is not a course (the preference is dropped and logged).
 
 **course_catalogue_draft.csv**: one row per course per cycle with its type and `ran`
