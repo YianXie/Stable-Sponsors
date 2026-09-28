@@ -12,7 +12,7 @@ import pandas as pd
 
 from idmap import EMAIL_RE, email_domain, norm_name, out_path
 
-MIN_TOKEN = 2          # catches Ng, Li, Wu, Ho
+MIN_TOKEN = 2  # catches Ng, Li, Wu, Ho
 
 
 def identifier_tokens(cfg) -> set[str]:
@@ -31,8 +31,11 @@ def allowlist(cfg) -> set[str]:
     p = out_path(cfg, "key/leakage_allowlist.txt")
     if not p.exists():
         return set()
-    return {ln.strip().lower() for ln in p.read_text().splitlines()
-            if ln.strip() and not ln.startswith("#")}
+    return {
+        ln.strip().lower()
+        for ln in p.read_text().splitlines()
+        if ln.strip() and not ln.startswith("#")
+    }
 
 
 def find_leaks(cfg) -> dict:
@@ -46,7 +49,9 @@ def find_leaks(cfg) -> dict:
             domains.add(email_domain(ident))
     ok = allowlist(cfg)
     toks = identifier_tokens(cfg) - ok
-    words = set(re.findall(r"[a-z]+", blob))       # whole words only, so "li" never hits "list"
+    words = set(
+        re.findall(r"[a-z]+", blob)
+    )  # whole words only, so "li" never hits "list"
     return {
         "files": [p.name for p in files],
         "emails": sorted(set(EMAIL_RE.findall(blob))),

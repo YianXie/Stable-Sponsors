@@ -77,3 +77,17 @@ def test_course_matching_cases():
 
 def test_norm_course_ampersand():
     assert norm_course("Arts & Heritage") == norm_course("Arts and Heritage")
+
+
+def test_slot_tags():
+    from idmap import course_key, split_slot_tag
+    assert split_slot_tag("Nepal Trek (MALE)") == ("Nepal Trek", "male")
+    assert split_slot_tag("Nepal Trek [Female] ") == ("Nepal Trek", "female")
+    assert split_slot_tag("Maldives - Male") == ("Maldives - Male", "")
+    assert split_slot_tag("(MALE)") == ("(MALE)", "")
+    assert course_key("Nepal Trek (MALE)") == course_key("nepal trek") == course_key("Nepal Trek (female)")
+    ix = CourseIndex()
+    ix.add("NPL-TRK", ["Nepal Trek"], ["NPL-TRK"])
+    ix.add("NPL-ADV", ["Nepal Trek Advanced"], ["NPL-ADV"])
+    assert ix.match("Nepal Trek (MALE)")[:2] == ("NPL-TRK", "exact_name")
+    assert ix.match("Nepal Trek Advanced (FEMALE)")[:2] == ("NPL-ADV", "exact_name")

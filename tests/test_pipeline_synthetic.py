@@ -203,6 +203,15 @@ def test_preferences_match_truth(world, built):
     assert got == want, (sorted(got - want)[:5], sorted(want - got)[:5])
 
 
+def test_slot_tags_match_truth(world, built):
+    t2p = _tid_to_pid(world, s1.ID_FINAL)
+    pr = _csv(world["root"], "derived/preferences.csv")
+    got = {(r.cycle, r.round, t2p[r.teacher_id], int(r.rank), r.slot_gender)
+           for r in pr.itertuples() if r.slot_gender}
+    want = {tuple(x) for x in world["truth"]["slot_tags"]}
+    assert want and got == want, (sorted(got - want)[:5], sorted(want - got)[:5])
+
+
 def test_derived_keys_are_unique(world, built):
     root = world["root"]
     assert not _csv(root, "derived/preferences.csv").duplicated(

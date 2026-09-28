@@ -542,3 +542,43 @@ def test_singapore_list_decides_type_and_flags_strays(tmp_path):
     assert cat.loc["SING-2", "type_evidence"] == "listed in expected_sg_codes"
     assert "ASSUMED_SG" not in cat.loc["SING-2", "flags"]
     assert "SG_BUT_NOT_IN_SG_LIST" in cat.loc["SING-5", "flags"]
+
+
+def test_key_files_from_an_older_version_are_set_aside(tmp_path):
+    cfg = mini(tmp_path)
+    key = tmp_path / "key"
+    key.mkdir()
+    pd.DataFrame({"preference_string": ["Bali Service"], "proposed_course_code": [""],
+                  "confirmed": ["y"]}).to_csv(key / "course_alias.csv", index=False)
+    pd.DataFrame({"teacher_id": ["T001"], "email": ["x@y.z"]}).to_csv(
+        key / "identity_draft.csv", index=False)
+    s1.run(cfg, quiet=True)
+    assert not (key / "course_alias.csv").exists()
+    assert len(list((key / "backup" / "legacy").glob("*.csv"))) == 2
+    al = pd.read_csv(key / "course_alias_draft.csv", dtype=str)
+    assert "cycle" in al.columns
+
+
+def test_gender_slot_tags_map_to_one_course_and_are_kept(tmp_path):
+    cfg = mini(tmp_path, r1=[[f"aabbott@{D}", "Bali Service (MALE)", "Nepal Trek (MALE)"],
+                             [f"bbaker@{D}", "Nepal Trek (FEMALE)", "Bali Service"],
+                             [f"ccruz@{D}", "Nepal Trek (MALE)", "Bali Service (FEMALE)"]])
+    s1.run(cfg, quiet=True)
+    al, _ = _drafts(cfg)
+    intl = al[al.source == "intl"]
+    assert len(intl) == 2 and set(intl["method"]) == {"exact_name"}   # one row per course
+    confirm_all(cfg)
+    s1.accept(cfg)
+    s2.run(cfg, quiet=True)
+    _, m = ids(cfg, s1.ID_FINAL)
+    pr = pd.read_csv(tmp_path / "derived/preferences.csv", dtype=str).fillna("")
+    alan = pr[pr.teacher_id == m[f"aabbott@{D}"]].sort_values("rank")
+    assert alan[["course_id", "slot_gender"]].values.tolist() == [["IDN-SVC", "male"],
+                                                                  ["NPL-TRK", "male"]]
+    brian = pr[pr.teacher_id == m[f"bbaker@{D}"]].sort_values("rank")
+    assert brian["slot_gender"].tolist() == ["female", ""]
+    te = pd.read_csv(tmp_path / "derived/teachers.csv", dtype=str).fillna("").set_index("teacher_id")
+    assert te.loc[m[f"aabbott@{D}"], "slot_genders_ranked"] == "male"
+    assert te.loc[m[f"ccruz@{D}"], "slot_genders_ranked"] == "female|male"
+    ch = pd.read_csv(tmp_path / "derived/checks.csv", dtype=str)
+    assert (ch["check"] == "ranked_both_male_and_female_slots").sum() == 1

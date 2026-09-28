@@ -37,7 +37,9 @@ def leaks(cfg):
 
 
 def test_no_email_addresses(leaks):
-    assert not leaks["emails"], f"{len(leaks['emails'])} email-shaped strings in derived/"
+    assert not leaks["emails"], (
+        f"{len(leaks['emails'])} email-shaped strings in derived/"
+    )
 
 
 def test_no_email_domain(leaks):
@@ -45,7 +47,9 @@ def test_no_email_domain(leaks):
 
 
 def test_no_name_tokens(leaks):
-    assert not leaks["tokens"], f"{len(leaks['tokens'])} name tokens in derived/: {leaks['tokens'][:10]}"
+    assert not leaks["tokens"], (
+        f"{len(leaks['tokens'])} name tokens in derived/: {leaks['tokens'][:10]}"
+    )
 
 
 def test_no_free_text_in_derived(leaks):
