@@ -36,7 +36,7 @@ from pathlib import Path
 import openpyxl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from idmap import match_score, norm_course  # noqa: E402
+from stable_sponsors.pseudonymize.idmap import match_score, norm_course  # noqa: E402
 
 DOMAIN = "sas.edu.sg"
 PREF_WORDS = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh"]

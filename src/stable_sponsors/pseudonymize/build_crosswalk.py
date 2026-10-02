@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from idmap import (
+from stable_sponsors.idmap import (
     NONE_COURSE,
     CourseIndex,
     course_key,
@@ -53,7 +53,7 @@ from idmap import (
     out_path,
     phrase_in,
 )
-from sources import load_all
+from stable_sponsors.sources import load_all
 
 ID_DRAFT, ID_FINAL = "key/identity_draft.csv", "key/identity.csv"
 ALIAS_DRAFT, ALIAS_FINAL = "key/course_alias_draft.csv", "key/course_alias.csv"
@@ -1291,7 +1291,9 @@ def run(cfg, quiet=False):
             else (
                 0
                 if needs_review(m)
-                else 2 if m in ("exact_name", "exact_code", "not_in_placements") else 1
+                else 2
+                if m in ("exact_name", "exact_code", "not_in_placements")
+                else 1
             )
         )
         return (a["confirmed"] == "y", tier, a["cycle"], a["source"], a["raw_string"])
