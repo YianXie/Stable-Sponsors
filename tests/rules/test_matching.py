@@ -5,8 +5,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from idmap import (  # noqa: E402
-    CourseIndex, match_score, name_similarity, norm_course, norm_email, norm_name, tokens_covered,
+from stable_sponsors.pseudonymize.idmap import (  # noqa: E402
+    CourseIndex,
+    match_score,
+    name_similarity,
+    norm_course,
+    norm_email,
+    norm_name,
+    tokens_covered,
 )
 
 
@@ -19,13 +25,15 @@ def test_norm_name_forms():
 
 
 def test_norm_email_extracts_address():
-    assert norm_email("Martin Williams <MWilliams@SAS.edu.sg>") == "mwilliams@sas.edu.sg"
+    assert (
+        norm_email("Martin Williams <MWilliams@SAS.edu.sg>") == "mwilliams@sas.edu.sg"
+    )
     assert norm_email("not an address") == ""
 
 
 def test_email_keys():
     assert match_score("mwilliams@sas.edu.sg", "Martin Williams") == ("exact_key", 1.0)
-    assert match_score("dkim2@sas.edu.sg", "David Kim")[1] == 1.0          # digit suffix
+    assert match_score("dkim2@sas.edu.sg", "David Kim")[1] == 1.0  # digit suffix
     assert match_score("sobrien@sas.edu.sg", "Sean O'Brien")[1] == 1.0
     assert match_score("mgarcialopez@sas.edu.sg", "Maria Garcia-Lopez")[1] == 1.0
     assert match_score("weiming.tan@sas.edu.sg", "Tan Wei Ming")[0] == "weak_key"
@@ -33,12 +41,14 @@ def test_email_keys():
 
 
 def test_name_similarity_is_conservative():
-    assert name_similarity("marty williams", "martin williams") >= 0.75     # nickname
-    assert name_similarity("dan kim", "daniel kim") >= 0.75                 # prefix
-    assert name_similarity("grace l tan", "grace tan") >= 0.75              # middle initial
-    assert name_similarity("maria garcia lopez", "maria garcia") >= 0.75    # double surname
-    assert name_similarity("williams martin", "martin williams") >= 0.75    # order
-    assert name_similarity("daniel kim", "david kim") < 0.75                # same initial only
+    assert name_similarity("marty williams", "martin williams") >= 0.75  # nickname
+    assert name_similarity("dan kim", "daniel kim") >= 0.75  # prefix
+    assert name_similarity("grace l tan", "grace tan") >= 0.75  # middle initial
+    assert (
+        name_similarity("maria garcia lopez", "maria garcia") >= 0.75
+    )  # double surname
+    assert name_similarity("williams martin", "martin williams") >= 0.75  # order
+    assert name_similarity("daniel kim", "david kim") < 0.75  # same initial only
     assert name_similarity("mary williams", "martin williams") < 0.75
     assert name_similarity("grace tan", "gina tan") < 0.75
 
@@ -64,14 +74,14 @@ def test_course_matching_cases():
     m = lambda s: ix.match(s)[:2]  # noqa: E731
     assert m("INT032 - Nepal Trek Advanced") == ("INT032", "code_in_string")
     assert m("Nepal Trek Advanced") == ("INT032", "exact_name")
-    assert m("Nepal Trek") == ("INT003", "exact_name")                     # not the longer one
+    assert m("Nepal Trek") == ("INT003", "exact_name")  # not the longer one
     assert m("INT003") == ("INT003", "exact_code")
-    assert m("npl-trk") == ("NPL-TRK", "exact_code")                      # hyphenated code
-    assert m("NPL TRK (Bhutan)")[0] == "NPL-TRK"                           # code inside a string
+    assert m("npl-trk") == ("NPL-TRK", "exact_code")  # hyphenated code
+    assert m("NPL TRK (Bhutan)")[0] == "NPL-TRK"  # code inside a string
     assert m("Nepal Trek (Kathmandu, Feb 2027)") == ("INT003", "name_in_string")
     assert m("Coastal Clean-up")[0] == "SGP004"
     assert m("INT003 / INT032 combined")[1] == "AMBIGUOUS_MULTIPLE_CODES"
-    assert m("Chile Rainforest Ecology") == ("", "UNMATCHED")               # other country
+    assert m("Chile Rainforest Ecology") == ("", "UNMATCHED")  # other country
     assert m("Kayaking in Krabi") == ("", "UNMATCHED")
 
 
@@ -80,12 +90,17 @@ def test_norm_course_ampersand():
 
 
 def test_slot_tags():
-    from idmap import course_key, split_slot_tag
+    from stable_sponsors.pseudonymize.idmap import course_key, split_slot_tag
+
     assert split_slot_tag("Nepal Trek (MALE)") == ("Nepal Trek", "male")
     assert split_slot_tag("Nepal Trek [Female] ") == ("Nepal Trek", "female")
     assert split_slot_tag("Maldives - Male") == ("Maldives - Male", "")
     assert split_slot_tag("(MALE)") == ("(MALE)", "")
-    assert course_key("Nepal Trek (MALE)") == course_key("nepal trek") == course_key("Nepal Trek (female)")
+    assert (
+        course_key("Nepal Trek (MALE)")
+        == course_key("nepal trek")
+        == course_key("Nepal Trek (female)")
+    )
     ix = CourseIndex()
     ix.add("NPL-TRK", ["Nepal Trek"], ["NPL-TRK"])
     ix.add("NPL-ADV", ["Nepal Trek Advanced"], ["NPL-ADV"])

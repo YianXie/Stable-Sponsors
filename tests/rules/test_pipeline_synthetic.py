@@ -18,10 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
-import apply_pseudonymization as s2  # noqa: E402
-import build_crosswalk as s1  # noqa: E402
-from idmap import load_config, norm_course  # noqa: E402
-from leakcheck import find_leaks  # noqa: E402
+import stable_sponsors.pseudonymize.apply_pseudonymization as s2  # noqa: E402
+import stable_sponsors.pseudonymize.build_crosswalk as s1  # noqa: E402
+from stable_sponsors.pseudonymize.idmap import load_config, norm_course  # noqa: E402
+from stable_sponsors.pseudonymize.leakcheck import find_leaks  # noqa: E402
 from make_synthetic import generate  # noqa: E402
 
 
@@ -65,28 +65,36 @@ def _clusters(world, rel=s1.ID_DRAFT):
     tk = _truth_keys(world["truth"])
     out = {}
     for tid, g in d.groupby("teacher_id"):
-        out[tid] = dict(pids=[tk.get(s1.node_key(x)) for x in g["identifier"]],
-                        flags=set(filter(None, g["cluster_flags"].iloc[0].split("|"))),
-                        idents=list(g["identifier"]))
+        out[tid] = dict(
+            pids=[tk.get(s1.node_key(x)) for x in g["identifier"]],
+            flags=set(filter(None, g["cluster_flags"].iloc[0].split("|"))),
+            idents=list(g["identifier"]),
+        )
     return out
 
 
 def test_unflagged_identity_proposals_are_all_correct(world):
     cl = _clusters(world)
-    assert all(None not in c["pids"] for c in cl.values()), "identifier missing from truth"
+    assert all(None not in c["pids"] for c in cl.values()), (
+        "identifier missing from truth"
+    )
     pid_tids = defaultdict(set)
     for tid, c in cl.items():
         for p in c["pids"]:
             pid_tids[p].add(tid)
-    wrong = {tid for tid, c in cl.items()
-             if len(set(c["pids"])) > 1 or any(len(pid_tids[p]) > 1 for p in c["pids"])}
+    wrong = {
+        tid
+        for tid, c in cl.items()
+        if len(set(c["pids"])) > 1 or any(len(pid_tids[p]) > 1 for p in c["pids"])
+    }
     unflagged_wrong = [tid for tid in wrong if not (cl[tid]["flags"] & set(s1.SERIOUS))]
     assert not unflagged_wrong, [(t, cl[t]) for t in unflagged_wrong]
     # only the two deliberately undecidable cases may be wrong (and they are flagged)
     sp = world["truth"]["special"]
     allowed = [{sp["sam"], sp["samantha"]}, {sp["qiang"], sp["quinn"]}]
-    assert all(any(set(cl[t]["pids"]) <= a for a in allowed) for t in wrong), \
-        [(t, cl[t]) for t in wrong]
+    assert all(any(set(cl[t]["pids"]) <= a for a in allowed) for t in wrong), [
+        (t, cl[t]) for t in wrong
+    ]
 
 
 def test_hard_identity_cases(world):
@@ -109,7 +117,9 @@ def test_hard_identity_cases(world):
     sam_clusters = by_pid[sp["sam"]] + by_pid[sp["samantha"]]
     for c in sam_clusters:
         names = {x.lower() for x in c["idents"] if "@" not in x}
-        assert len(names) == 1, "one person, one name: Sam and Samantha never merged together"
+        assert len(names) == 1, (
+            "one person, one name: Sam and Samantha never merged together"
+        )
         assert len(c["idents"]) == 2 and "LOW_MARGIN" in c["flags"]
     # undecidable from the data (slee@ vs slee2@): either assignment is acceptable,
     # but it must be flagged, which is asserted above
@@ -120,8 +130,10 @@ def test_hard_identity_cases(world):
 def test_course_links_match_truth(world):
     root, truth = world["root"], world["truth"]
     al, cat = _csv(root, s1.ALIAS_DRAFT), _csv(root, s1.CAT_DRAFT)
-    tkey = {(r.cycle, r.course_id): (r.trip_code or "NR:" + norm_course(r.offerings_name))
-            for r in cat.itertuples()}
+    tkey = {
+        (r.cycle, r.course_id): (r.trip_code or "NR:" + norm_course(r.offerings_name))
+        for r in cat.itertuples()
+    }
     errs = []
     for r in al.itertuples():
         want = truth["aliases"][r.cycle][r.source].get(r.raw_string)
@@ -157,8 +169,11 @@ def _review_like_a_human(world):
     for pid, g in d.sort_values("kind").groupby("pid", sort=True):
         tid = g["teacher_id"].iloc[0]
         if tid in used:
-            tid = next(f"T{i:03d}" for i in range(999, 0, -1)
-                       if f"T{i:03d}" not in set(d["teacher_id"]) | used)
+            tid = next(
+                f"T{i:03d}"
+                for i in range(999, 0, -1)
+                if f"T{i:03d}" not in set(d["teacher_id"]) | used
+            )
         chosen[pid] = tid
         used.add(tid)
     new = d["pid"].map(chosen)
@@ -184,9 +199,16 @@ def test_placements_match_truth(world, built):
     root, truth = world["root"], world["truth"]
     t2p = _tid_to_pid(world, s1.ID_FINAL)
     pl = _csv(root, "derived/placements.csv")
-    got = {(r.cycle, r.course_id, int(r.sponsor_slot), t2p[r.teacher_id])
-           for r in pl.itertuples() if r.status == "assigned"}
-    want = {(cyc, c, int(s), p) for cyc, rows in truth["placements"].items() for c, s, p in rows}
+    got = {
+        (r.cycle, r.course_id, int(r.sponsor_slot), t2p[r.teacher_id])
+        for r in pl.itertuples()
+        if r.status == "assigned"
+    }
+    want = {
+        (cyc, c, int(s), p)
+        for cyc, rows in truth["placements"].items()
+        for c, s, p in rows
+    }
     assert got == want, (sorted(got - want)[:5], sorted(want - got)[:5])
 
 
@@ -194,11 +216,15 @@ def test_preferences_match_truth(world, built):
     root, truth = world["root"], world["truth"]
     t2p = _tid_to_pid(world, s1.ID_FINAL)
     cat = _csv(root, s1.CAT_FINAL)
-    tkey = {(r.cycle, r.course_id): (r.trip_code or "NR:" + norm_course(r.offerings_name))
-            for r in cat.itertuples()}
+    tkey = {
+        (r.cycle, r.course_id): (r.trip_code or "NR:" + norm_course(r.offerings_name))
+        for r in cat.itertuples()
+    }
     pr = _csv(root, "derived/preferences.csv")
-    got = {(r.cycle, r.round, t2p[r.teacher_id], int(r.rank), tkey[(r.cycle, r.course_id)])
-           for r in pr.itertuples()}
+    got = {
+        (r.cycle, r.round, t2p[r.teacher_id], int(r.rank), tkey[(r.cycle, r.course_id)])
+        for r in pr.itertuples()
+    }
     want = {tuple(x) for x in truth["prefs"]}
     assert got == want, (sorted(got - want)[:5], sorted(want - got)[:5])
 
@@ -206,19 +232,30 @@ def test_preferences_match_truth(world, built):
 def test_slot_tags_match_truth(world, built):
     t2p = _tid_to_pid(world, s1.ID_FINAL)
     pr = _csv(world["root"], "derived/preferences.csv")
-    got = {(r.cycle, r.round, t2p[r.teacher_id], int(r.rank), r.slot_gender)
-           for r in pr.itertuples() if r.slot_gender}
+    got = {
+        (r.cycle, r.round, t2p[r.teacher_id], int(r.rank), r.slot_gender)
+        for r in pr.itertuples()
+        if r.slot_gender
+    }
     want = {tuple(x) for x in world["truth"]["slot_tags"]}
     assert want and got == want, (sorted(got - want)[:5], sorted(want - got)[:5])
 
 
 def test_derived_keys_are_unique(world, built):
     root = world["root"]
-    assert not _csv(root, "derived/preferences.csv").duplicated(
-        ["cycle", "teacher_id", "round", "rank"]).any()
-    assert not _csv(root, "derived/teachers.csv").duplicated(["cycle", "teacher_id"]).any()
-    assert not _csv(root, "derived/placements.csv").duplicated(
-        ["cycle", "course_id", "sponsor_slot"]).any()
+    assert (
+        not _csv(root, "derived/preferences.csv")
+        .duplicated(["cycle", "teacher_id", "round", "rank"])
+        .any()
+    )
+    assert (
+        not _csv(root, "derived/teachers.csv").duplicated(["cycle", "teacher_id"]).any()
+    )
+    assert (
+        not _csv(root, "derived/placements.csv")
+        .duplicated(["cycle", "course_id", "sponsor_slot"])
+        .any()
+    )
 
 
 def test_repeaters_and_unknowns(world, built):
@@ -226,19 +263,30 @@ def test_repeaters_and_unknowns(world, built):
     t2p = _tid_to_pid(world, s1.ID_FINAL)
     t = _csv(root, "derived/teachers.csv")
     t26, t27 = t[t.cycle == "2026"], t[t.cycle == "2027"]
-    assert (t26["is_repeater"] == "").all(), "2026 has no repeat file: status must be unknown"
+    assert (t26["is_repeater"] == "").all(), (
+        "2026 has no repeat file: status must be unknown"
+    )
     assert (t26["submitted_intl_r2"] == "").all(), "2026 had no round 2"
-    got = {t2p[r.teacher_id]: r.prior_course_id for r in t27.itertuples() if r.is_repeater == "True"}
+    got = {
+        t2p[r.teacher_id]: r.prior_course_id
+        for r in t27.itertuples()
+        if r.is_repeater == "True"
+    }
     assert got == truth["repeaters"]["2027"]
 
 
 def test_expected_checks(world, built):
     c = _csv(world["root"], "derived/checks.csv")
     n = (c["check"] == "prior_course_differs_from_previous_placement").sum()
-    assert n == world["truth"]["expected_checks"]["prior_course_differs_from_previous_placement"]
-    assert (c["check"] == "placed_without_any_response").sum() == 1       # Quinn
-    assert (c["check"] == "submitted_but_not_placed").sum() >= 1          # Qiang
-    assert not (c["check"] == "placed_on_course_not_in_any_list").any()   # after the fix
+    assert (
+        n
+        == world["truth"]["expected_checks"][
+            "prior_course_differs_from_previous_placement"
+        ]
+    )
+    assert (c["check"] == "placed_without_any_response").sum() == 1  # Quinn
+    assert (c["check"] == "submitted_but_not_placed").sum() >= 1  # Qiang
+    assert not (c["check"] == "placed_on_course_not_in_any_list").any()  # after the fix
     missing = c[c["check"] == "course_missing_from_placements"]
     assert missing[["cycle", "course_id"]].values.tolist() == [["2026", "SING-9"]]
     co = _csv(world["root"], "derived/courses.csv")
@@ -250,7 +298,9 @@ def test_expected_checks(world, built):
 
 def test_no_leaks(world, built):
     leaks = find_leaks(world["cfg"])
-    assert not leaks["emails"] and not leaks["domains"] and not leaks["stray_text_files"], leaks
+    assert (
+        not leaks["emails"] and not leaks["domains"] and not leaks["stray_text_files"]
+    ), leaks
     assert not leaks["tokens"], leaks["tokens"]
 
 
@@ -279,7 +329,9 @@ def test_coding_sheet_survives_rebuild(world, built):
     df.loc[df.index[0], "req_certification"] = "scuba"
     df.to_csv(sheet, index=False)
     s2.run(cfg, quiet=True)
-    assert _csv(root, "freetext/coding_sheet.csv").loc[0, "req_certification"] == "scuba"
+    assert (
+        _csv(root, "freetext/coding_sheet.csv").loc[0, "req_certification"] == "scuba"
+    )
 
 
 def test_stage2_refuses_uncovered_identity(world, built):

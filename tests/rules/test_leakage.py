@@ -15,8 +15,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from idmap import REPO_ROOT, load_config, out_path  # noqa: E402
-from leakcheck import find_leaks  # noqa: E402
+from stable_sponsors.pseudonymize.idmap import REPO_ROOT, load_config, out_path  # noqa: E402
+from stable_sponsors.pseudonymize.leakcheck import find_leaks  # noqa: E402
 
 CONFIG = Path(os.environ.get("PSEUDO_CONFIG", ROOT / "config/pseudonymize.yaml"))
 

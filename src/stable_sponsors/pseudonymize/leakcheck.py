@@ -10,7 +10,7 @@ import re
 
 import pandas as pd
 
-from idmap import EMAIL_RE, email_domain, norm_name, out_path
+from stable_sponsors.idmap import EMAIL_RE, email_domain, norm_name, out_path
 
 MIN_TOKEN = 2  # catches Ng, Li, Wu, Ho
 
