@@ -11,7 +11,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 
-from stable_sponsors.idmap import (
+from stable_sponsors.pseudonymize.idmap import (
     canon_header,
     is_null_pref,
     is_placeholder_sponsor,

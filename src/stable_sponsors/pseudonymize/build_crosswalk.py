@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from stable_sponsors.idmap import (
+from stable_sponsors.pseudonymize.idmap import (
     NONE_COURSE,
     CourseIndex,
     course_key,
@@ -53,7 +53,7 @@ from stable_sponsors.idmap import (
     out_path,
     phrase_in,
 )
-from stable_sponsors.sources import load_all
+from stable_sponsors.pseudonymize.sources import load_all
 
 ID_DRAFT, ID_FINAL = "key/identity_draft.csv", "key/identity.csv"
 ALIAS_DRAFT, ALIAS_FINAL = "key/course_alias_draft.csv", "key/course_alias.csv"

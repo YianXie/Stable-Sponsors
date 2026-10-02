@@ -8,13 +8,13 @@ import pandas as pd
 import pytest
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-import stable_sponsors.pseudonymize.apply_pseudonymization as s2  # noqa: E402
-import stable_sponsors.pseudonymize.build_crosswalk as s1  # noqa: E402
-from stable_sponsors.pseudonymize.idmap import CourseIndex, load_config  # noqa: E402
-from stable_sponsors.pseudonymize.sources import load_cycle  # noqa: E402
+import stable_sponsors.pseudonymize.apply_pseudonymization as s2
+import stable_sponsors.pseudonymize.build_crosswalk as s1
+from stable_sponsors.pseudonymize.idmap import CourseIndex, load_config
+from stable_sponsors.pseudonymize.sources import load_cycle
 
 D = "sas.edu.sg"
 

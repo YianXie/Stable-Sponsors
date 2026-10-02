@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from stable_sponsors.build_crosswalk import (
+from stable_sponsors.pseudonymize.build_crosswalk import (
     ALIAS_DRAFT,
     ALIAS_FINAL,
     CAT_DRAFT,
@@ -42,7 +42,7 @@ from stable_sponsors.build_crosswalk import (
     is_yes,
     node_key,
 )
-from stable_sponsors.idmap import (
+from stable_sponsors.pseudonymize.idmap import (
     NONE_COURSE,
     REPO_ROOT,
     course_key,
@@ -51,7 +51,7 @@ from stable_sponsors.idmap import (
     sha256_file,
     split_slot_tag,
 )
-from stable_sponsors.sources import load_all
+from stable_sponsors.pseudonymize.sources import load_all
 
 CODE_COLUMNS = [
     "req_certification",

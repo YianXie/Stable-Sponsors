@@ -244,11 +244,4 @@ pyrightconfig.json
 
 # ---- interim data: never commit spreadsheets or pipeline output, even by accident
 config/pseudonymize.yaml
-*.xlsx
-*.xlsm
-*.xls
-*.csv
-raw/
-key/
-derived/
-freetext/
+config/rules-2027.yaml

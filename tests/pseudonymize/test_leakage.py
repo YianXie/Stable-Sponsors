@@ -13,10 +13,14 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-from stable_sponsors.pseudonymize.idmap import REPO_ROOT, load_config, out_path  # noqa: E402
-from stable_sponsors.pseudonymize.leakcheck import find_leaks  # noqa: E402
+from stable_sponsors.pseudonymize.idmap import (
+    REPO_ROOT,
+    load_config,
+    out_path,
+)
+from stable_sponsors.pseudonymize.leakcheck import find_leaks
 
 CONFIG = Path(os.environ.get("PSEUDO_CONFIG", ROOT / "config/pseudonymize.yaml"))
 
