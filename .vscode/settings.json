@@ -3,6 +3,8 @@
     "idmap",
     "leakcheck",
     "leximin",
+    "NEPA",
+    "NEWZ",
     "obrien",
     "pseudonymization",
     "pseudonymize"
