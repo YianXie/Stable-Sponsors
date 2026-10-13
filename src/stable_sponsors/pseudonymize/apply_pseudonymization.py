@@ -23,12 +23,13 @@ is_repeater in a cycle with no repeat file), never "no".
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import platform
 import subprocess
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 
@@ -118,12 +119,12 @@ def load_course_key(cfg):
             raise SystemExit(
                 f"course_catalogue.csv: line {r.Index + 2} course_type must be intl or sg"
             )
-        cat[(str(r.cycle), r.course_id)] = dict(
-            course_type=r.course_type,
-            country=r.country,
-            ran=getattr(r, "ran", ""),
-            trip_code=getattr(r, "trip_code", ""),
-        )
+        cat[(str(r.cycle), r.course_id)] = {
+            "course_type": r.course_type,
+            "country": r.country,
+            "ran": getattr(r, "ran", ""),
+            "trip_code": getattr(r, "trip_code", ""),
+        }
     return amap, cat
 
 
@@ -157,7 +158,7 @@ def git_state():
             ).strip()
         )
         return commit, dirty
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return "unknown", True
 
 
@@ -179,7 +180,13 @@ def run(cfg, quiet=False):
 
     def check(cy, kind, tid="", cid="", detail=""):
         checks.append(
-            dict(cycle=cy, check=kind, teacher_id=tid, course_id=cid, detail=detail)
+            {
+                "cycle": cy,
+                "check": kind,
+                "teacher_id": tid,
+                "course_id": cid,
+                "detail": detail,
+            }
         )
 
     for cy in cycles:
@@ -291,14 +298,14 @@ def run(cfg, quiet=False):
                 if slot:
                     slot_genders[t].add(slot)
                 prefs.append(
-                    dict(
-                        cycle=k,
-                        teacher_id=t,
-                        round=r.round,
-                        rank=rank,
-                        course_id=cid,
-                        slot_gender=slot,
-                    )
+                    {
+                        "cycle": k,
+                        "teacher_id": t,
+                        "round": r.round,
+                        "rank": rank,
+                        "course_id": cid,
+                        "slot_gender": slot,
+                    }
                 )
             for col, txt in r.freetext.items():
                 freetext.append((k, t, r.round, col, txt))
@@ -308,13 +315,13 @@ def run(cfg, quiet=False):
         for s in cy.slots:
             if s.status != "named":
                 places.append(
-                    dict(
-                        cycle=k,
-                        course_id=s.code,
-                        sponsor_slot=s.slot,
-                        teacher_id="",
-                        status=s.status,
-                    )
+                    {
+                        "cycle": k,
+                        "course_id": s.code,
+                        "sponsor_slot": s.slot,
+                        "teacher_id": "",
+                        "status": s.status,
+                    }
                 )
                 continue
             nk = node_key(s.sponsor)
@@ -326,13 +333,13 @@ def run(cfg, quiet=False):
                 continue
             placed[t].append(s.code)
             places.append(
-                dict(
-                    cycle=k,
-                    course_id=s.code,
-                    sponsor_slot=s.slot,
-                    teacher_id=t,
-                    status="assigned",
-                )
+                {
+                    "cycle": k,
+                    "course_id": s.code,
+                    "sponsor_slot": s.slot,
+                    "teacher_id": t,
+                    "status": "assigned",
+                }
             )
         placed = dict(placed)  # plain dict: lookups below must not insert
         placed_by_cycle[k] = placed
@@ -345,27 +352,27 @@ def run(cfg, quiet=False):
             any_form = any(t in submitted[rd] for rd in cy.rounds)
             mine = placed.get(t, [])
             teachers.append(
-                dict(
-                    cycle=k,
-                    teacher_id=t,
-                    is_repeater=(t in rep) if cy.repeaters is not None else "",
-                    prior_course_id=rep.get(t, ""),
-                    submitted_intl_r1=(t in submitted["intl_r1"])
+                {
+                    "cycle": k,
+                    "teacher_id": t,
+                    "is_repeater": (t in rep) if cy.repeaters is not None else "",
+                    "prior_course_id": rep.get(t, ""),
+                    "submitted_intl_r1": (t in submitted["intl_r1"])
                     if "intl_r1" in cy.rounds
                     else "",
-                    submitted_intl_r2=(t in submitted["intl_r2"])
+                    "submitted_intl_r2": (t in submitted["intl_r2"])
                     if "intl_r2" in cy.rounds
                     else "",
-                    submitted_sg=(t in submitted["sg"]) if "sg" in cy.rounds else "",
-                    is_placed=bool(mine),
+                    "submitted_sg": (t in submitted["sg"]) if "sg" in cy.rounds else "",
+                    "is_placed": bool(mine),
                     # unknown for a cycle without a repeat file: they may be repeaters
-                    slot_genders_ranked="|".join(sorted(slot_genders.get(t, ()))),
-                    placed_without_submission=(
+                    "slot_genders_ranked": "|".join(sorted(slot_genders.get(t, ()))),
+                    "placed_without_submission": (
                         ""
                         if (cy.repeaters is None and mine and not any_form)
                         else bool(mine) and not any_form and t not in rep
                     ),
-                )
+                }
             )
             if len(mine) > 1:
                 check(k, "placed_on_more_than_one_course", t, "|".join(mine))
@@ -436,15 +443,15 @@ def run(cfg, quiet=False):
                     "has a trip code but no placement row; ask the office whether it ran",
                 )
             courses.append(
-                dict(
-                    cycle=k,
-                    course_id=cid,
-                    course_type=meta["course_type"],
-                    in_offerings=cid in offered,
-                    ran="" if unknown else assigned[cid] > 0,
-                    n_sponsors_assigned=assigned[cid],
-                    country=meta["country"],
-                )
+                {
+                    "cycle": k,
+                    "course_id": cid,
+                    "course_type": meta["course_type"],
+                    "in_offerings": cid in offered,
+                    "ran": "" if unknown else assigned[cid] > 0,
+                    "n_sponsors_assigned": assigned[cid],
+                    "country": meta["country"],
+                }
             )
         orphans = {cid for (c, cid) in cat if c == k} - cids
         for cid in sorted(orphans):
@@ -458,7 +465,7 @@ def run(cfg, quiet=False):
 
     # ---- cross-cycle: a repeater's prior course should be last cycle's placement
     keys = [cy.key for cy in cycles]
-    for prev, cur in zip(keys, keys[1:]):
+    for prev, cur in itertools.pairwise(keys):
         cur_rep = {
             t["teacher_id"]: t["prior_course_id"]
             for t in teachers
@@ -554,22 +561,24 @@ def run(cfg, quiet=False):
     for cy in cycles:
         t = tables["teachers"][tables["teachers"]["cycle"] == cy.key]
         c = tables["courses"][tables["courses"]["cycle"] == cy.key]
-        counts[cy.key] = dict(
-            teachers=len(t),
-            placed=int(t["is_placed"].sum()),
-            repeaters=int((t["is_repeater"] == True).sum())
+        counts[cy.key] = {
+            "teachers": len(t),
+            "placed": int(t["is_placed"].sum()),
+            "repeaters": int((t["is_repeater"] == True).sum())
             if cy.repeaters is not None
-            else None,  # noqa: E712
-            courses=len(c),
-            courses_ran=int((c["ran"] == True).sum()),  # noqa: E712
-            courses_ran_unknown=int((c["ran"] == "").sum()),
-            intl_offered=int(((c["course_type"] == "intl") & c["in_offerings"]).sum()),
-            sg=int((c["course_type"] == "sg").sum()),
-            preference_rows=int((tables["preferences"]["cycle"] == cy.key).sum()),
-            rounds=cy.rounds,
-        )
+            else None,
+            "courses": len(c),
+            "courses_ran": int((c["ran"] == True).sum()),
+            "courses_ran_unknown": int((c["ran"] == "").sum()),
+            "intl_offered": int(
+                ((c["course_type"] == "intl") & c["in_offerings"]).sum()
+            ),
+            "sg": int((c["course_type"] == "sg").sum()),
+            "preference_rows": int((tables["preferences"]["cycle"] == cy.key).sum()),
+            "rounds": cy.rounds,
+        }
     manifest = {
-        "built_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "built_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "git_commit": commit,
         "working_tree_dirty": dirty,
         "python": platform.python_version(),
@@ -628,7 +637,15 @@ def write_freetext(cfg, items):
             "".join(ch if ch.isalnum() else "_" for ch in col).lower().strip("_")[:40]
         )
         (d / f"{t}__{rnd}__{slug}.txt").write_text(txt)
-        rows.append(dict(cycle=cyc, teacher_id=t, round=rnd, field=col, chars=len(txt)))
+        rows.append(
+            {
+                "cycle": cyc,
+                "teacher_id": t,
+                "round": rnd,
+                "field": col,
+                "chars": len(txt),
+            }
+        )
     new = pd.DataFrame(rows, columns=["cycle", "teacher_id", "round", "field", "chars"])
     sheet = base / "coding_sheet.csv"
     keys = ["cycle", "teacher_id", "round", "field"]

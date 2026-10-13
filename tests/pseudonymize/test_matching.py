@@ -71,7 +71,7 @@ def _idx():
 
 def test_course_matching_cases():
     ix = _idx()
-    m = lambda s: ix.match(s)[:2]  # noqa: E731
+    m = lambda s: ix.match(s)[:2]
     assert m("INT032 - Nepal Trek Advanced") == ("INT032", "code_in_string")
     assert m("Nepal Trek Advanced") == ("INT032", "exact_name")
     assert m("Nepal Trek") == ("INT003", "exact_name")  # not the longer one

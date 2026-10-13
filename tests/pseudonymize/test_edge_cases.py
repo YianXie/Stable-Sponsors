@@ -311,7 +311,7 @@ def test_new_id_token_and_draft_edits_survive_rerun_after_accept(tmp_path):
 def test_split_with_only_one_side_confirmed_survives_rerun(tmp_path):
     cfg = mini(tmp_path)
     s1.run(cfg, quiet=True)
-    df, m = ids(cfg)
+    df, _m = ids(cfg)
     row = df["identifier"] == "Alan Abbott"
     df.loc[row, ["teacher_id", "notes", "confirmed"]] = ["NEW", "split on purpose", "y"]
     df.to_csv(s1.out_path(cfg, s1.ID_DRAFT), index=False)

@@ -24,50 +24,106 @@ SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "phd", "edd", "md"}
 # compared after lower-casing and removing everything but letters and digits,
 # so "N/A.", "n / a", "?" and "--" all count
 NULL_TOKENS = {"", "na", "none", "nil", "null", "nan", "nopreference", "noneselected"}
-PLACEHOLDER_SPONSORS = NULL_TOKENS | {"tbd", "tba", "tbc", "vacant", "needed", "open",
-                                      "unknown", "newhire", "staff", "sponsor", "sponsorneeded"}
-NONE_COURSE = "NONE"          # course_id meaning "not a course; drop this preference"
+PLACEHOLDER_SPONSORS = NULL_TOKENS | {
+    "tbd",
+    "tba",
+    "tbc",
+    "vacant",
+    "needed",
+    "open",
+    "unknown",
+    "newhire",
+    "staff",
+    "sponsor",
+    "sponsorneeded",
+}
+NONE_COURSE = "NONE"  # course_id meaning "not a course; drop this preference"
 EMAIL_RE = re.compile(r"[a-z0-9._%+\-]+@[a-z0-9\-]+(?:\.[a-z0-9\-]+)+")
 _HEADER_WORDS = re.compile(
     r"\b(?:e-?mail|address(?:es)?|names?|preferences?|choices?|courses?|codes?|sponsors?|"
     r"text|city|country|prior|rounds?|timestamp|time|questions?|comments?|unnamed|free|trip|"
     r"repeat(?:ing)?|dates?|notes?|id|first|last|second|third|fourth|fifth|sixth|seventh)\b",
-    re.I)
+    re.IGNORECASE,
+)
 
 # Given-name equivalence classes. A shared class counts as the same given name
 # only when the surnames also agree; see name_similarity().
 _NICK_GROUPS = [
-    {"william", "will", "bill", "billy", "liam"}, {"robert", "rob", "bob", "bobby", "robbie"},
-    {"richard", "rich", "rick", "ricky"}, {"james", "jim", "jimmy", "jamie"},
-    {"michael", "mike", "mick", "mikey"}, {"christopher", "chris", "topher"},
+    {"william", "will", "bill", "billy", "liam"},
+    {"robert", "rob", "bob", "bobby", "robbie"},
+    {"richard", "rich", "rick", "ricky"},
+    {"james", "jim", "jimmy", "jamie"},
+    {"michael", "mike", "mick", "mikey"},
+    {"christopher", "chris", "topher"},
     {"christine", "christina", "chris", "tina"},
     {"elizabeth", "liz", "lizzie", "beth", "betsy", "eliza", "libby"},
     {"katherine", "catherine", "kathryn", "kate", "katie", "kathy", "cathy", "kat"},
-    {"margaret", "maggie", "meg", "peggy"}, {"jennifer", "jen", "jenn", "jenny"},
-    {"rebecca", "becky", "becca"}, {"patricia", "pat", "patty", "trish"},
-    {"patrick", "pat", "paddy"}, {"matthew", "matt"}, {"thomas", "tom", "tommy"},
-    {"anthony", "tony"}, {"andrew", "andy", "drew"}, {"alexander", "alex", "xander"},
-    {"alexandra", "alex", "lexi"}, {"samuel", "sam", "sammy"}, {"samantha", "sam", "sammy"},
-    {"benjamin", "ben", "benny"}, {"daniel", "dan", "danny"}, {"david", "dave", "davey"},
-    {"steven", "stephen", "steve"}, {"joseph", "joe", "joey"}, {"nicholas", "nick", "nicky"},
-    {"susan", "sue", "susie"}, {"jonathan", "jon", "jonny"}, {"timothy", "tim"},
-    {"edward", "ed", "eddie", "ted", "ned"}, {"gregory", "greg"},
-    {"jeffrey", "geoffrey", "jeff", "geoff"}, {"kenneth", "ken", "kenny"},
-    {"ronald", "ron", "ronnie"}, {"donald", "don", "donnie"}, {"douglas", "doug"},
-    {"frederick", "fred", "freddie"}, {"gerald", "gerry", "jerry"},
-    {"lawrence", "laurence", "larry"}, {"leonard", "leo", "len", "lenny"},
-    {"martin", "marty"}, {"nathan", "nathaniel", "nate"}, {"peter", "pete"},
-    {"philip", "phillip", "phil"}, {"raymond", "ray"}, {"victoria", "vicky", "tori"},
-    {"deborah", "debra", "deb", "debbie"}, {"abigail", "abby"}, {"amanda", "mandy"},
-    {"barbara", "barb"}, {"cynthia", "cindy"}, {"eleanor", "ellie", "nell"},
-    {"frances", "fran"}, {"francis", "frank"}, {"gabriel", "gabe"},
-    {"gabrielle", "gabby", "gabi"}, {"jacqueline", "jackie"}, {"judith", "judy"},
-    {"kimberly", "kim"}, {"melissa", "mel", "missy"}, {"melanie", "mel"},
-    {"pamela", "pam"}, {"sandra", "sandy"}, {"stephanie", "steph"},
-    {"theresa", "teresa", "terri", "tess"}, {"zachary", "zach", "zack"},
-    {"joshua", "josh"}, {"jacob", "jake"}, {"charles", "charlie", "chuck"},
-    {"henry", "hank", "harry"}, {"harold", "harry", "hal"},
-    {"allison", "alison", "ally", "allie"}, {"madeline", "madeleine", "maddie"},
+    {"margaret", "maggie", "meg", "peggy"},
+    {"jennifer", "jen", "jenn", "jenny"},
+    {"rebecca", "becky", "becca"},
+    {"patricia", "pat", "patty", "trish"},
+    {"patrick", "pat", "paddy"},
+    {"matthew", "matt"},
+    {"thomas", "tom", "tommy"},
+    {"anthony", "tony"},
+    {"andrew", "andy", "drew"},
+    {"alexander", "alex", "xander"},
+    {"alexandra", "alex", "lexi"},
+    {"samuel", "sam", "sammy"},
+    {"samantha", "sam", "sammy"},
+    {"benjamin", "ben", "benny"},
+    {"daniel", "dan", "danny"},
+    {"david", "dave", "davey"},
+    {"steven", "stephen", "steve"},
+    {"joseph", "joe", "joey"},
+    {"nicholas", "nick", "nicky"},
+    {"susan", "sue", "susie"},
+    {"jonathan", "jon", "jonny"},
+    {"timothy", "tim"},
+    {"edward", "ed", "eddie", "ted", "ned"},
+    {"gregory", "greg"},
+    {"jeffrey", "geoffrey", "jeff", "geoff"},
+    {"kenneth", "ken", "kenny"},
+    {"ronald", "ron", "ronnie"},
+    {"donald", "don", "donnie"},
+    {"douglas", "doug"},
+    {"frederick", "fred", "freddie"},
+    {"gerald", "gerry", "jerry"},
+    {"lawrence", "laurence", "larry"},
+    {"leonard", "leo", "len", "lenny"},
+    {"martin", "marty"},
+    {"nathan", "nathaniel", "nate"},
+    {"peter", "pete"},
+    {"philip", "phillip", "phil"},
+    {"raymond", "ray"},
+    {"victoria", "vicky", "tori"},
+    {"deborah", "debra", "deb", "debbie"},
+    {"abigail", "abby"},
+    {"amanda", "mandy"},
+    {"barbara", "barb"},
+    {"cynthia", "cindy"},
+    {"eleanor", "ellie", "nell"},
+    {"frances", "fran"},
+    {"francis", "frank"},
+    {"gabriel", "gabe"},
+    {"gabrielle", "gabby", "gabi"},
+    {"jacqueline", "jackie"},
+    {"judith", "judy"},
+    {"kimberly", "kim"},
+    {"melissa", "mel", "missy"},
+    {"melanie", "mel"},
+    {"pamela", "pam"},
+    {"sandra", "sandy"},
+    {"stephanie", "steph"},
+    {"theresa", "teresa", "terri", "tess"},
+    {"zachary", "zach", "zack"},
+    {"joshua", "josh"},
+    {"jacob", "jake"},
+    {"charles", "charlie", "chuck"},
+    {"henry", "hank", "harry"},
+    {"harold", "harry", "hal"},
+    {"allison", "alison", "ally", "allie"},
+    {"madeline", "madeleine", "maddie"},
 ]
 _NICK: dict[str, set[int]] = {}
 for _i, _g in enumerate(_NICK_GROUPS):
@@ -79,12 +135,14 @@ for _i, _g in enumerate(_NICK_GROUPS):
 # config and IO
 # --------------------------------------------------------------------------
 
+
 def _guard(p, what: str) -> Path:
     p = Path(p).expanduser().resolve()
     if p == REPO_ROOT or REPO_ROOT in p.parents:
         raise SystemExit(
             f"REFUSING: {what} {p} is inside the repository ({REPO_ROOT}). "
-            "Raw data, the key and derived data must live outside the repo.")
+            "Raw data, the key and derived data must live outside the repo."
+        )
     return p
 
 
@@ -144,8 +202,10 @@ def safe_headers(cols) -> list:
     """Headers for error messages. If the header row is missing, the 'headers'
     are a data row (names, emails), so anything that does not look like a
     header is shown only as its shape."""
-    return [c if (_HEADER_WORDS.search(str(c)) and "@" not in str(c)) else f"<{shape(c)}>"
-            for c in cols]
+    return [
+        c if (_HEADER_WORDS.search(str(c)) and "@" not in str(c)) else f"<{shape(c)}>"
+        for c in cols
+    ]
 
 
 def squash(s) -> str:
@@ -170,7 +230,9 @@ def read_sheet(path: Path, sheet=None) -> pd.DataFrame:
         raise SystemExit(f"missing input file: {path}")
     if path.suffix.lower() in {".xlsx", ".xlsm", ".xls"}:
         try:
-            df = pd.read_excel(path, sheet_name=sheet if sheet is not None else 0, dtype=str)
+            df = pd.read_excel(
+                path, sheet_name=sheet if sheet is not None else 0, dtype=str
+            )
         except ValueError as exc:
             sheets = pd.ExcelFile(path).sheet_names
             raise SystemExit(f"{path.name}: {exc}. Sheets present: {sheets}") from None
@@ -179,8 +241,10 @@ def read_sheet(path: Path, sheet=None) -> pd.DataFrame:
     df.columns = [re.sub(r"\s+", " ", str(c)).strip() for c in df.columns]
     dup = sorted({c for c in df.columns if list(df.columns).count(c) > 1})
     if dup:
-        raise SystemExit(f"{path.name}: duplicate column headers after trimming spaces: "
-                         f"{safe_headers(dup)}")
+        raise SystemExit(
+            f"{path.name}: duplicate column headers after trimming spaces: "
+            f"{safe_headers(dup)}"
+        )
     df = df.fillna("").astype(str)
     for c in df.columns:
         df[c] = df[c].str.strip()
@@ -197,18 +261,25 @@ def resolve_col(df: pd.DataFrame, want, label: str):
     if len(hits) == 1:
         return hits[0]
     shown = safe_headers(df.columns)
-    hint = ("\n  Some headers look like data (shown as shapes); is the header row missing?"
-            if any(str(h).startswith("<") for h in shown) else "")
-    raise SystemExit(f"{label}: column {want!r} not found.\n  columns present: {shown}{hint}")
+    hint = (
+        "\n  Some headers look like data (shown as shapes); is the header row missing?"
+        if any(str(h).startswith("<") for h in shown)
+        else ""
+    )
+    raise SystemExit(
+        f"{label}: column {want!r} not found.\n  columns present: {shown}{hint}"
+    )
 
 
 # --------------------------------------------------------------------------
 # normalisation
 # --------------------------------------------------------------------------
 
+
 def strip_accents(s) -> str:
-    return "".join(c for c in unicodedata.normalize("NFKD", str(s))
-                   if not unicodedata.combining(c))
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", str(s)) if not unicodedata.combining(c)
+    )
 
 
 def looks_like_email(s) -> bool:
@@ -236,7 +307,9 @@ def norm_name(s) -> str:
     s = strip_accents(s).lower()
     s = re.sub(r"\(.*?\)|\[.*?\]", " ", s)
     s = s.replace("'", "")
-    s = "".join(ch if (ch.isalpha() or ch in ",-. \t") else " " for ch in s)   # any script
+    s = "".join(
+        ch if (ch.isalpha() or ch in ",-. \t") else " " for ch in s
+    )  # any script
     if s.count(",") == 1:
         last, _, first = s.partition(",")
         s = f"{first} {last}"
@@ -255,7 +328,7 @@ def norm_course(s) -> str:
 # open: every course needs at least one male and one female sponsor, so once one is
 # pre-allocated only the other gender's slot is offered. Only the bracketed full word
 # counts, so a destination such as "Maldives - Male" is never cut.
-SLOT_TAG_RE = re.compile(r"\s*[\(\[]\s*(male|female)\s*[\)\]]\s*$", re.I)
+SLOT_TAG_RE = re.compile(r"\s*[\(\[]\s*(male|female)\s*[\)\]]\s*$", re.IGNORECASE)
 
 
 def split_slot_tag(s) -> tuple[str, str]:
@@ -284,22 +357,35 @@ def _ratio(a: str, b: str) -> float:
 # people
 # --------------------------------------------------------------------------
 
+
 def _name_keys(n: str):
     """Email local parts a normalised name could plausibly produce."""
     toks = n.split()
     if not toks:
         return set(), set()
     first, last, rest, mid = toks[0], toks[-1], toks[1:], toks[1:-1]
-    strong = {first + last, last + first, first[0] + last, last + first[0], first + last[0]}
+    strong = {
+        first + last,
+        last + first,
+        first[0] + last,
+        last + first[0],
+        first + last[0],
+    }
     if mid:
-        strong |= {first + "".join(t[0] for t in mid) + last, first[0] + mid[0][0] + last,
-                   first + "".join(rest), first[0] + "".join(rest)}
+        strong |= {
+            first + "".join(t[0] for t in mid) + last,
+            first[0] + mid[0][0] + last,
+            first + "".join(rest),
+            first[0] + "".join(rest),
+        }
     weak = {last, first}
     if len(toks) > 1:
-        weak |= {first[0] + rest[0],                                  # first part of a double surname
-                 first + "".join(t[0] for t in rest),                  # surname-first: tanwm
-                 "".join(t[0] for t in rest) + first,                  # wmtan
-                 "".join(rest) + first}                                # weimingtan
+        weak |= {
+            first[0] + rest[0],  # first part of a double surname
+            first + "".join(t[0] for t in rest),  # surname-first: tanwm
+            "".join(t[0] for t in rest) + first,  # wmtan
+            "".join(rest) + first,
+        }  # weimingtan
     weak -= strong
     return strong, weak
 
@@ -309,7 +395,7 @@ def match_score(email: str, name: str) -> tuple[str, float]:
     local = email_local(email)
     if not local:
         return "no_local_part", 0.0
-    bare = re.sub(r"\d+$", "", local) or local        # dkim2 -> dkim
+    bare = re.sub(r"\d+$", "", local) or local  # dkim2 -> dkim
     n = norm_name(name)
     strong, weak = _name_keys(n)
     if local in strong or bare in strong:
@@ -345,21 +431,21 @@ def name_similarity(a: str, b: str) -> float:
         return 0.9
     fa, la, fb, lb = ta[0], ta[-1], tb[0], tb[-1]
     if fa == fb and la == lb:
-        return 0.95                                   # middle name or initial differs
+        return 0.95  # middle name or initial differs
     if la == lb:
         if nick_equiv(fa, fb):
             return 0.85
         short, long_ = sorted((fa, fb), key=len)
         if len(short) >= 3 and long_.startswith(short):
-            return 0.85                               # dan / daniel
+            return 0.85  # dan / daniel
         if min(len(fa), len(fb)) > 2 and _ratio(fa, fb) >= 0.85:
-            return 0.75                               # jonathon / jonathan
+            return 0.75  # jonathon / jonathan
         return 0.5 if fa[0] == fb[0] else 0.2
     if fa == fb:
         if set(ta[1:]) & set(tb[1:]):
-            return 0.8                                # garcia lopez / garcia
+            return 0.8  # garcia lopez / garcia
         if _ratio(la, lb) >= 0.85:
-            return 0.75                               # surname typo
+            return 0.75  # surname typo
         return 0.1
     return 0.0
 
@@ -389,14 +475,19 @@ def tokens_covered(a: str, b: str) -> bool:
             continue
         if len(t) <= 2:
             continue
-        if not any(t == u or (len(t) > 3 and len(u) > 3 and _ratio(t, u) >= 0.75) for u in long_):
+        if not any(
+            t == u or (len(t) > 3 and len(u) > 3 and _ratio(t, u) >= 0.75)
+            for u in long_
+        ):
             return False
     return True
 
 
 def _contiguous(needle, hay) -> bool:
     n = len(needle)
-    return n > 0 and any(tuple(hay[i:i + n]) == tuple(needle) for i in range(len(hay) - n + 1))
+    return n > 0 and any(
+        tuple(hay[i : i + n]) == tuple(needle) for i in range(len(hay) - n + 1)
+    )
 
 
 def phrase_in(phrase: str, text: str) -> bool:
@@ -427,14 +518,22 @@ class CourseIndex:
             groups = re.findall(r"[a-z0-9]+", strip_accents(c).lower())
             # Only distinctive codes are searched for inside longer strings: "NPL-TRK" or
             # "INT032" yes, "101" or "ART" no (they occur naturally in course names).
-            distinctive = len(groups) >= 2 or (re.search(r"[a-z]", k) and re.search(r"\d", k))
+            distinctive = len(groups) >= 2 or (
+                re.search(r"[a-z]", k) and re.search(r"\d", k)
+            )
             if distinctive:
-                pat = r"(?<![a-z0-9])" + r"[\s\-_/.]*".join(map(re.escape, groups)) + r"(?![a-z0-9])"
+                pat = (
+                    r"(?<![a-z0-9])"
+                    + r"[\s\-_/.]*".join(map(re.escape, groups))
+                    + r"(?![a-z0-9])"
+                )
                 self.code_res.append((re.compile(pat), course_id))
 
     def __len__(self):
-        return len({c for ids in self.by_name.values() for c in ids} |
-                   {c for ids in self.by_code.values() for c in ids})
+        return len(
+            {c for ids in self.by_name.values() for c in ids}
+            | {c for ids in self.by_code.values() for c in ids}
+        )
 
     def match(self, s) -> tuple[str, str, float, object]:
         """Return (course_id, method, score, margin). course_id is '' when unresolved.
@@ -500,7 +599,12 @@ class CourseIndex:
             return "", "UNMATCHED", round(nearest, 3), ""
         (bid, b), second = ranked[0], (ranked[1][1] if len(ranked) > 1 else 0.0)
         margin = round(b - second, 3)
-        return bid, ("fuzzy" if margin >= 0.08 else "FUZZY_THIN_MARGIN"), round(b, 3), margin
+        return (
+            bid,
+            ("fuzzy" if margin >= 0.08 else "FUZZY_THIN_MARGIN"),
+            round(b, 3),
+            margin,
+        )
 
 
 def needs_review(method: str) -> bool:

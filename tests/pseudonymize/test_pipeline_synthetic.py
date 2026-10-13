@@ -18,11 +18,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
-import stable_sponsors.pseudonymize.apply_pseudonymization as s2  # noqa: E402
-import stable_sponsors.pseudonymize.build_crosswalk as s1  # noqa: E402
-from stable_sponsors.pseudonymize.idmap import load_config, norm_course  # noqa: E402
-from stable_sponsors.pseudonymize.leakcheck import find_leaks  # noqa: E402
-from make_synthetic import generate  # noqa: E402
+from make_synthetic import generate
+
+import stable_sponsors.pseudonymize.apply_pseudonymization as s2
+import stable_sponsors.pseudonymize.build_crosswalk as s1
+from stable_sponsors.pseudonymize.idmap import load_config, norm_course
+from stable_sponsors.pseudonymize.leakcheck import find_leaks
 
 
 @pytest.fixture(scope="module")
@@ -35,7 +36,7 @@ def world(tmp_path_factory):
     cp.write_text(yaml.safe_dump(cfg_d))
     cfg = load_config(cp)
     report = s1.run(cfg, quiet=True)
-    return dict(root=root, truth=truth, cfg=cfg, report=report)
+    return {"root": root, "truth": truth, "cfg": cfg, "report": report}
 
 
 def _csv(root, rel):
@@ -65,11 +66,11 @@ def _clusters(world, rel=s1.ID_DRAFT):
     tk = _truth_keys(world["truth"])
     out = {}
     for tid, g in d.groupby("teacher_id"):
-        out[tid] = dict(
-            pids=[tk.get(s1.node_key(x)) for x in g["identifier"]],
-            flags=set(filter(None, g["cluster_flags"].iloc[0].split("|"))),
-            idents=list(g["identifier"]),
-        )
+        out[tid] = {
+            "pids": [tk.get(s1.node_key(x)) for x in g["identifier"]],
+            "flags": set(filter(None, g["cluster_flags"].iloc[0].split("|"))),
+            "idents": list(g["identifier"]),
+        }
     return out
 
 
@@ -101,7 +102,7 @@ def test_hard_identity_cases(world):
     cl = _clusters(world)
     sp = world["truth"]["special"]
     by_pid = defaultdict(list)
-    for tid, c in cl.items():
+    for c in cl.values():
         for p in set(c["pids"]):
             by_pid[p].append(c)
     [david] = by_pid[sp["david"]]

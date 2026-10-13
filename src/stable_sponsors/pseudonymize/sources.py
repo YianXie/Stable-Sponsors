@@ -24,7 +24,7 @@ from stable_sponsors.pseudonymize.idmap import (
 )
 
 ROUNDS = {"intl_r1": "intl", "intl_r2": "intl", "sg": "sg"}
-MULTI_NAME_RE = re.compile(r"\s(?:&|and|\+)\s|\s/\s|;|\n", re.I)
+MULTI_NAME_RE = re.compile(r"\s(?:&|and|\+)\s|\s/\s|;|\n", re.IGNORECASE)
 
 
 @dataclass
@@ -95,7 +95,7 @@ def _dedupe(rows, label, policy, warnings):
     for x in rows:
         by_email.setdefault(x.email, []).append(x)
     out = []
-    for e, xs in by_email.items():
+    for xs in by_email.values():
         if len(xs) == 1:
             out.append(xs[0])
             continue

@@ -36,7 +36,7 @@ from pathlib import Path
 import openpyxl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from stable_sponsors.pseudonymize.idmap import match_score, norm_course  # noqa: E402
+from stable_sponsors.pseudonymize.idmap import match_score, norm_course
 
 DOMAIN = "sas.edu.sg"
 PREF_WORDS = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh"]
@@ -122,8 +122,10 @@ THEMES = [
 ]
 FT_2026_INTL = [
     "Any important comments or priorities regarding your co-sponsor?",
-    "Please share relevant and notable experience, certifications, and skills "
-    "connected to your preferred courses.",
+    (
+        "Please share relevant and notable experience, certifications, and skills "
+        "connected to your preferred courses."
+    ),
     "Any final questions or comments?",
 ]
 FT_2026_SG = FT_2026_INTL[1:]
@@ -338,13 +340,13 @@ def generate(out: Path, seed: int = 7) -> dict:
         e = email or email_for(first, last, taken)
         if email:
             taken.add(email.split("@")[0])
-        people[pid] = dict(
-            first=first,
-            last=last,
-            email=e,
-            display=display or f"{first} {last}",
-            variants={},
-        )
+        people[pid] = {
+            "first": first,
+            "last": last,
+            "email": e,
+            "display": display or f"{first} {last}",
+            "variants": {},
+        }
         return pid
 
     sp = {
@@ -421,13 +423,13 @@ def generate(out: Path, seed: int = 7) -> dict:
         dests, [rng.choice(THEMES) for _ in dests]
     ):
         universe.append(
-            dict(
-                name=f"{country} {theme}",
-                country=country,
-                city=city,
-                code=f"{iso}-{ab}",
-                theme=theme,
-            )
+            {
+                "name": f"{country} {theme}",
+                "country": country,
+                "city": city,
+                "code": f"{iso}-{ab}",
+                "theme": theme,
+            }
         )
     offered = {"2026": universe[:52], "2027": universe[6:60]}
 
@@ -465,7 +467,7 @@ def generate(out: Path, seed: int = 7) -> dict:
             rng.shuffle(cands)
             rep = {p: placed_prev[p][0] for p in cands[:35]}
             # one repeated course is renumbered in 2027
-            ren_code = sorted(set(rep.values()))[0]
+            ren_code = min(set(rep.values()))
             renumbered = ren_code
             new_code = ren_code.split("-")[0] + "-X" + ren_code.split("-")[1][:2]
             for c in offer:
@@ -477,7 +479,7 @@ def generate(out: Path, seed: int = 7) -> dict:
             rng.shuffle(pool)
             rep = {p: None for p in [sp["dana"]] + pool[:29]}  # 2026 repeaters: no file
 
-        def code27(c):
+        def code27(c, cyc=cyc):
             return c.get("code27", c["code"]) if cyc == "2027" else c["code"]
 
         rep_courses = {c for c in rep.values() if c}
@@ -618,7 +620,7 @@ def generate(out: Path, seed: int = 7) -> dict:
             "Prefer late February dates.",
         ]
 
-        def intl_list(p, exclude=None, include=None, k=7):
+        def intl_list(p, exclude=None, include=None, k=7, offer=offer):
             pool = [c["name"] for c in offer if c["name"] != exclude]
             picks = rng.sample(pool, k)
             if include and include not in picks:
@@ -634,7 +636,7 @@ def generate(out: Path, seed: int = 7) -> dict:
                 else "NR:" + norm_course(c["name"])
             )
 
-        def tkey(course_name):
+        def tkey(course_name, offer=offer, not_run=not_run):
             c = next(x for x in offer if x["name"] == course_name)
             return (
                 code27(c)
@@ -665,7 +667,7 @@ def generate(out: Path, seed: int = 7) -> dict:
             for s in picks:
                 alias_truth["intl"][s] = tkey(s)
 
-            def tag(picks, cyc=cyc, p=p):
+            def tag(picks, cyc=cyc, p=p, alias_truth=alias_truth):
                 """Some options carry the open slot's gender, e.g. 'Nepal Trek (MALE)'."""
                 out = []
                 for i, s in enumerate(picks, 1):
@@ -829,12 +831,13 @@ def generate(out: Path, seed: int = 7) -> dict:
                 if c["name"] not in not_run
                 else "NR:" + norm_course(c["name"])
             )
-            courses_truth[k] = dict(type="intl", ran=c["name"] not in not_run)
+            courses_truth[k] = {"type": "intl", "ran": c["name"] not in not_run}
         for _, code in SG:
             gone = cyc == "2026" and code == MISSING_2026
-            courses_truth[code] = dict(
-                type="sg", ran=None if gone else True
-            )  # None = unknown
+            courses_truth[code] = {
+                "type": "sg",
+                "ran": None if gone else True,
+            }  # None = unknown
         truth["courses"][cyc] = courses_truth
         truth["aliases"][cyc] = alias_truth
         truth["placements"][cyc] = ptruth

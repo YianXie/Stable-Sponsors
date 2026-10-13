@@ -32,15 +32,14 @@ import shutil
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd
 
 from stable_sponsors.pseudonymize.idmap import (
     NONE_COURSE,
     CourseIndex,
-    course_key,
     _ratio,
+    course_key,
     load_config,
     looks_like_email,
     match_score,
@@ -512,14 +511,14 @@ def build_identity(cfg, cycles):
                 if not same_cycle(k, bs[2]):
                     flags.add("CROSS_CYCLE_LINK")
             method_counts[method] += 1
-            details[k] = dict(
-                method=method,
-                score=score,
-                link=link,
-                margin=margin,
-                other=(bo[0] if bo else ""),
-                other_id=(tid_of[cl.find(bo[2])] if bo else ""),
-            )
+            details[k] = {
+                "method": method,
+                "score": score,
+                "link": link,
+                "margin": margin,
+                "other": (bo[0] if bo else ""),
+                "other_id": (tid_of[cl.find(bo[2])] if bo else ""),
+            }
         cluster_flags[r] = flags
         tid = tid_of[r]
         crow = []
@@ -711,15 +710,15 @@ def build_courses(cy, prior_alias, prior_cat):
     # 4. catalogue
     courses = {}
     for code, nm in pnames.items():
-        courses[code] = dict(
-            trip_code=code,
-            placement_name=nm,
-            offerings=[],
-            city="",
-            country="",
-            join_method="",
-            join_score="",
-        )
+        courses[code] = {
+            "trip_code": code,
+            "placement_name": nm,
+            "offerings": [],
+            "city": "",
+            "country": "",
+            "join_method": "",
+            "join_score": "",
+        }
     for rec in offer:
         o, cid, m, s, _ = rec
         if not cid:
@@ -727,15 +726,15 @@ def build_courses(cy, prior_alias, prior_cat):
             m = "not_in_placements" if m == "UNMATCHED" else m
             rec[1], rec[2] = cid, m
         if cid not in courses:  # did not run, or has a code but no placement row
-            courses[cid] = dict(
-                trip_code="" if cid.startswith("NR-") else cid,
-                placement_name="",
-                offerings=[],
-                city="",
-                country="",
-                join_method=m,
-                join_score="",
-            )
+            courses[cid] = {
+                "trip_code": "" if cid.startswith("NR-") else cid,
+                "placement_name": "",
+                "offerings": [],
+                "city": "",
+                "country": "",
+                "join_method": m,
+                "join_score": "",
+            }
         c = courses[cid]
         c["offerings"].append(o.name)
         c["city"] = c["city"] or o.city
@@ -746,15 +745,15 @@ def build_courses(cy, prior_alias, prior_cat):
     missing_sg = []  # listed as Singapore courses but absent from the placement sheet
     for code in cy.expected_sg_codes or []:
         if norm_code(code) not in {norm_code(c) for c in courses}:
-            courses[code] = dict(
-                trip_code=code,
-                placement_name="",
-                offerings=[],
-                city="",
-                country="",
-                join_method="",
-                join_score="",
-            )
+            courses[code] = {
+                "trip_code": code,
+                "placement_name": "",
+                "offerings": [],
+                "city": "",
+                "country": "",
+                "join_method": "",
+                "join_score": "",
+            }
             missing_sg.append(code)
 
     def ran_status(cid):
@@ -787,21 +786,21 @@ def build_courses(cy, prior_alias, prior_cat):
 
     for o, cid, m, s, mg in offer:
         alias.append(
-            dict(
-                cycle=key,
-                source="offerings",
-                raw_string=o.name,
-                course_id=cid,
-                matched_course=display(cid),
-                method=m,
-                score=s,
-                margin=mg,
-                uses=1,
-                rounds="",
-                conflict_with=(
+            {
+                "cycle": key,
+                "source": "offerings",
+                "raw_string": o.name,
+                "course_id": cid,
+                "matched_course": display(cid),
+                "method": m,
+                "score": s,
+                "margin": mg,
+                "uses": 1,
+                "rounds": "",
+                "conflict_with": (
                     conflict_target.get(cid, "") if m == "LOCK_CONFLICT" else ""
                 ),
-            )
+            }
         )
 
     strings = {}
@@ -843,19 +842,19 @@ def build_courses(cy, prior_alias, prior_cat):
         if cid and cid != NONE_COURSE and src in ("intl", "sg"):
             ranked_by[cid].add(src)
         alias.append(
-            dict(
-                cycle=key,
-                source=src,
-                raw_string=e["raw"],
-                course_id=cid,
-                matched_course=display(cid),
-                method=m,
-                score=s,
-                margin=mg,
-                uses=e["uses"],
-                rounds="|".join(sorted(e["rounds"])),
-                conflict_with=conflict,
-            )
+            {
+                "cycle": key,
+                "source": src,
+                "raw_string": e["raw"],
+                "course_id": cid,
+                "matched_course": display(cid),
+                "method": m,
+                "score": s,
+                "margin": mg,
+                "uses": e["uses"],
+                "rounds": "|".join(sorted(e["rounds"])),
+                "conflict_with": conflict,
+            }
         )
 
     # 5b. a Singapore-form string that matches nothing probably names the missing course
@@ -935,24 +934,24 @@ def build_courses(cy, prior_alias, prior_cat):
             if pc["course_type"] == ctype:
                 confirmed, note = ("y" if pc["confirmed"] else ""), pc["notes"]
         catalogue.append(
-            dict(
-                cycle=key,
-                course_id=cid,
-                trip_code=c["trip_code"],
-                course_type=ctype,
-                ran=ran_status(cid),
-                in_offerings="y" if c["offerings"] else "n",
-                placement_name=c["placement_name"],
-                offerings_name=" | ".join(c["offerings"]),
-                arrival_city=c["city"],
-                country=country,
-                join_method=c["join_method"],
-                join_score=c["join_score"],
-                type_evidence=ev,
-                flags="|".join(flags),
-                confirmed=confirmed,
-                notes=note,
-            )
+            {
+                "cycle": key,
+                "course_id": cid,
+                "trip_code": c["trip_code"],
+                "course_type": ctype,
+                "ran": ran_status(cid),
+                "in_offerings": "y" if c["offerings"] else "n",
+                "placement_name": c["placement_name"],
+                "offerings_name": " | ".join(c["offerings"]),
+                "arrival_city": c["city"],
+                "country": country,
+                "join_method": c["join_method"],
+                "join_score": c["join_score"],
+                "type_evidence": ev,
+                "flags": "|".join(flags),
+                "confirmed": confirmed,
+                "notes": note,
+            }
         )
 
     # 7. checks worth printing
@@ -960,20 +959,24 @@ def build_courses(cy, prior_alias, prior_cat):
     joined_n = sum(1 for r in catalogue if r["trip_code"] and r["in_offerings"] == "y")
     nr = sum(1 for r in catalogue if not r["trip_code"])
     missing = sorted(r["course_id"] for r in catalogue if r["ran"] == "unknown")
-    summary = dict(
-        missing=missing,
-        by_code=cy.offerings_have_codes,
-        expected_sg_codes=len(cy.expected_sg_codes or []),
-        placement_courses=len(pnames),
-        offerings=len(cy.offerings),
-        joined=joined_n,
-        did_not_run=nr,
-        sg=n_sg,
-        expected_sg=cy.expected_sg_courses,
-        continuation_rows=cy.n_continuation_rows,
-        alias_methods=Counter(a["method"] for a in alias if a["source"] != "offerings"),
-        join_methods=Counter(a["method"] for a in alias if a["source"] == "offerings"),
-    )
+    summary = {
+        "missing": missing,
+        "by_code": cy.offerings_have_codes,
+        "expected_sg_codes": len(cy.expected_sg_codes or []),
+        "placement_courses": len(pnames),
+        "offerings": len(cy.offerings),
+        "joined": joined_n,
+        "did_not_run": nr,
+        "sg": n_sg,
+        "expected_sg": cy.expected_sg_courses,
+        "continuation_rows": cy.n_continuation_rows,
+        "alias_methods": Counter(
+            a["method"] for a in alias if a["source"] != "offerings"
+        ),
+        "join_methods": Counter(
+            a["method"] for a in alias if a["source"] == "offerings"
+        ),
+    }
     for cid in missing:
         why = (
             "is listed in expected_sg_codes"
@@ -1206,7 +1209,7 @@ def accept(cfg):
                 problems.append(
                     f"{draft}: {len(orphan_nr)} did-not-run course ids are used by form "
                     "strings but no offering row points to them any more "
-                    f"(e.g. {sorted(orphan_nr)[0][1]}); remap those strings"
+                    f"(e.g. {min(orphan_nr)[1]}); remap those strings"
                 )
         if draft == CAT_DRAFT:
             badt = df[~df["course_type"].isin(["intl", "sg"])]
@@ -1258,12 +1261,12 @@ def run(cfg, quiet=False):
     prior_cat = {}
     if prior_cat_rows is not None:
         for r in prior_cat_rows.itertuples():
-            prior_cat[(str(r.cycle), r.course_id)] = dict(
-                course_type=r.course_type,
-                confirmed=is_yes(r.confirmed),
-                notes=r.notes,
-                country=getattr(r, "country", ""),
-            )
+            prior_cat[(str(r.cycle), r.course_id)] = {
+                "course_type": r.course_type,
+                "confirmed": is_yes(r.confirmed),
+                "notes": r.notes,
+                "country": getattr(r, "country", ""),
+            }
 
     cat_all, alias_all, summaries, notes = [], [], {}, []
     for cy in cycles:
@@ -1334,7 +1337,7 @@ def run(cfg, quiet=False):
 
     if not quiet:
         print_report(cycles, id_rep, id_rows, summaries, notes, alias_all, cat_all, cfg)
-    return dict(identity=id_rep, courses=summaries, notes=notes)
+    return {"identity": id_rep, "courses": summaries, "notes": notes}
 
 
 def print_report(cycles, id_rep, id_rows, summaries, notes, alias_all, cat_all, cfg):
