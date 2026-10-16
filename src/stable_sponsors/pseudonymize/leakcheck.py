@@ -19,6 +19,19 @@ from stable_sponsors.pseudonymize.idmap import (
 
 MIN_TOKEN = 2  # catches Ng, Li, Wu, Ho
 
+# Hex digests (manifest.json) and hashed course codes (NR-3ce91a) are not
+# prose, but splitting them on [a-z]+ yields fragments like "ce", "be", "ad"
+# that collide with short names, and change on every rebuild. Drop any run of
+# 6+ hex characters that contains a digit before tokenizing: a name never
+# contains a digit, so this cannot hide a real leak.
+HEX_RUN = re.compile(r"(?<![0-9a-z])(?=[0-9a-f]*[0-9])[0-9a-f]{6,}(?![0-9a-z])")
+
+
+def text_words(blob: str) -> set[str]:
+    """Whole lowercase words in blob, ignoring hex digests and hash codes."""
+    # whole words only, so "li" never hits "list"
+    return set(re.findall(r"[a-z]+", HEX_RUN.sub(" ", blob.lower())))
+
 
 def identifier_tokens(cfg) -> set[str]:
     cw = pd.read_csv(out_path(cfg, "key/identity.csv"), dtype=str).fillna("")
@@ -54,9 +67,7 @@ def find_leaks(cfg) -> dict:
             domains.add(email_domain(ident))
     ok = allowlist(cfg)
     toks = identifier_tokens(cfg) - ok
-    words = set(
-        re.findall(r"[a-z]+", blob)
-    )  # whole words only, so "li" never hits "list"
+    words = text_words(blob)
     return {
         "files": [p.name for p in files],
         "emails": sorted(set(EMAIL_RE.findall(blob))),
