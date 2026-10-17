@@ -516,11 +516,12 @@ def validate_cycle(cycle: Cycle) -> None:
             )
 
 
-def load_cycle(base: Path) -> Cycle:
+def load_cycle(base: Path, params_dir: Path | None = None) -> Cycle:
     """Loads a cycle of teacher-course preferences from CSV files in the specified directory.
 
     Args:
         base (Path): The base path to the directory containing the CSV files.
+        params_dir (Path | None, optional): An optional path to the directory containing parameter CSV files. If not provided, it defaults to the base path.
 
     Returns:
         Cycle: An instance of the Cycle class containing teachers, courses, and preferences.
@@ -528,6 +529,8 @@ def load_cycle(base: Path) -> Cycle:
     Raises:
         ValueError: If any validation check fails during the loading of the cycle.
     """
+
+    params_dir = params_dir or base
 
     if not base.exists() or not base.is_dir():
         raise ValueError(
@@ -538,8 +541,8 @@ def load_cycle(base: Path) -> Cycle:
     courses = load_courses(base / "courses.csv")
     preferences = load_preferences(base / "preferences.csv")
 
-    teachers = load_teacher_params(base / "teacher_params.csv", teachers)
-    courses = load_course_params(base / "course_params.csv", courses)
+    teachers = load_teacher_params(params_dir / "teacher_params.csv", teachers)
+    courses = load_course_params(params_dir / "course_params.csv", courses)
 
     cycle = Cycle(teachers=teachers, courses=courses, preferences=preferences)
     validate_cycle(cycle)
