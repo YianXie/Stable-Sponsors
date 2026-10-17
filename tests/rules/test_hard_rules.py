@@ -269,7 +269,7 @@ def test_missing_teacher_gender_raises(ctx: Ctx) -> None:
             for t in ctx.cycle.teachers
         ),
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="has no gender specified"):
         slot_gender(ctx, {})
 
 
@@ -288,7 +288,7 @@ def test_missing_female_slots_raises(ctx: Ctx) -> None:
             for c in ctx.cycle.courses
         ),
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="must have both male and female slots"):
         slot_gender(ctx, {})
 
 
@@ -355,7 +355,9 @@ def test_missing_bounds_raises(ctx):
             for c in ctx.cycle.courses
         ),
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match="must have both min and max capacity specified"
+    ):
         course_capacity(ctx, {})
 
 
