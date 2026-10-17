@@ -1,4 +1,5 @@
-cycle,course_id,course_type,in_offerings,ran,n_sponsors_assigned,country,requires
-2027,INTL-1,intl,True,True,2,Country 1,scuba
-2027,INTL-2,intl,True,True,2,Country 2
-2027,SING-1,sg,False,True,2,
+cycle, course_id, course_type, in_offerings, ran  , n_sponsors_assigned, country
+ 2027, INTL-1   , intl       , True        , True ,                   2, Country 1
+ 2027, INTL-2   , intl       , True        , True ,                   2, Country 2
+ 2027, INTL-3   , intl       , True        , False,                   0, Country 3
+ 2027, SING-1   , sg         , False       , True ,                   1, 

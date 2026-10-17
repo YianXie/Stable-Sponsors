@@ -1,6 +1,6 @@
-cycle,course_id,sponsor_slot,teacher_id,status
-2027,INTL-1,1,T1000,assigned
-2027,INTL-1,2,T1004,assigned
-2027,INTL-2,1,T1002,assigned
-2027,INTL-2,2,T1003,assigned
-2027,SING-1,1,T1001,assigned
+cycle, course_id, sponsor_slot, teacher_id, status
+ 2027, INTL-1   ,            1, T1000     , assigned
+ 2027, INTL-1   ,            2, T1004     , assigned
+ 2027, INTL-2   ,            1, T1002     , assigned
+ 2027, INTL-2   ,            2, T1003     , assigned
+ 2027, SING-1   ,            1, T1001     , assigned
