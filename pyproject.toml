@@ -14,6 +14,14 @@ dependencies = [
     "ruff>=0.17.0",
 ]
 
+[build-system]
+requires = ["uv_build>=0.9.29,<0.10"]
+build-backend = "uv_build"
+
+# The distribution name keeps the "sponsers" spelling; the import name doesn't.
+[tool.uv.build-backend]
+module-name = "stable_sponsors"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tools"]
