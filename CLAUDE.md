@@ -16,7 +16,7 @@ uv run ruff check . && uv run ruff format .
 uv run pytest tests/rules/test_hard_rules.py::test_repeater_cannot_be_moved_out -v   # single test
 ```
 
-`pyproject.toml` has no build system, so the package is not installed. pytest gets `src/` and `tools/` on its path through `pythonpath`. Outside pytest, use `PYTHONPATH=src`, e.g. `PYTHONPATH=src uv run python -m stable_sponsors.pseudonymize.build_crosswalk --help`. The `python src/build_crosswalk.py` paths in `docs/pseudonymization.md` and the script docstrings are out of date. The scripts now live under `src/stable_sponsors/pseudonymize/`.
+`pyproject.toml` uses the `uv_build` backend (with `module-name = "stable_sponsors"`, since the distribution is spelled `stable-sponsers`), so `uv sync` installs the package in editable mode and `uv run python -m stable_sponsors.<module>` works directly, e.g. `uv run python -m stable_sponsors.pseudonymize.build_crosswalk --help`. pytest also adds `src/` and `tools/` through `pythonpath`. The `python src/build_crosswalk.py` paths in `docs/pseudonymization.md` and the script docstrings are out of date. The scripts now live under `src/stable_sponsors/pseudonymize/`.
 
 ## Architecture
 
