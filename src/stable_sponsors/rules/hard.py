@@ -47,7 +47,11 @@ def only_ranked_courses(ctx: Ctx, params: dict) -> None:
     """
 
     ranked = {(p.teacher_id, p.course_id) for p in ctx.cycle.preferences}
+    ranked |= {
+        (t.teacher_id, t.prior_course_id) for t in ctx.cycle.teachers if t.is_repeater
+    }
     submitters = {p.teacher_id for p in ctx.cycle.preferences}
+
     for t in ctx.cycle.teachers:
         if t.teacher_id not in submitters:
             continue

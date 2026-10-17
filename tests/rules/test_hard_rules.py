@@ -4,7 +4,7 @@ import pytest
 import yaml
 from ortools.sat.python import cp_model
 
-from stable_sponsors.data import Cycle, load_observed_placements
+from stable_sponsors.data import Cycle, Preference, load_observed_placements
 from stable_sponsors.rules.context import Ctx, build_ctx
 from stable_sponsors.rules.hard import (
     course_capacity,
@@ -220,6 +220,23 @@ def test_ranked_course_is_feasible(ctx: Ctx) -> None:
     force(ctx, ("T1001",), "INTL-2")  # T1001 has ranked INTL-2
     status = solve(ctx)
     assert status in FEASIBLE
+
+
+def test_repeater_can_take_unranked_prior_course(toy_cycle):
+    # T1000 repeats INTL-1 but submitted a form ranking only INTL-2
+    extra = Preference(
+        cycle=2027,
+        teacher_id="T1000",
+        round_id="intl_r1",
+        rank=1,
+        course_id="INTL-2",
+        slot_gender=None,
+    )
+    cyc = replace(toy_cycle, preferences=toy_cycle.preferences + (extra,))
+    ctx = build_ctx(cyc)
+    incumbency_preassignment(ctx, {})
+    only_ranked_courses(ctx, {})
+    assert solve(ctx) in FEASIBLE
 
 
 ### Slot gender tests

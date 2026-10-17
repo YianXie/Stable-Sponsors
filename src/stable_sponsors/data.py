@@ -516,12 +516,15 @@ def validate_cycle(cycle: Cycle) -> None:
             )
 
 
-def load_cycle(base: Path, params_dir: Path | None = None) -> Cycle:
+def load_cycle(
+    base: Path, params_dir: Path | None = None, cycle: int | None = None
+) -> Cycle:
     """Loads a cycle of teacher-course preferences from CSV files in the specified directory.
 
     Args:
         base (Path): The base path to the directory containing the CSV files.
         params_dir (Path | None, optional): An optional path to the directory containing parameter CSV files. If not provided, it defaults to the base path.
+        cycle (int | None, optional): Keep only rows for this cycle. derived/ holds every cycle in the same files, so pass this for real data. None keeps all rows (fine for single-cycle fixtures).
 
     Returns:
         Cycle: An instance of the Cycle class containing teachers, courses, and preferences.
@@ -541,10 +544,17 @@ def load_cycle(base: Path, params_dir: Path | None = None) -> Cycle:
     courses = load_courses(base / "courses.csv")
     preferences = load_preferences(base / "preferences.csv")
 
+    if cycle is not None:
+        teachers = tuple(t for t in teachers if t.cycle == cycle)
+        courses = tuple(c for c in courses if c.cycle == cycle)
+        preferences = tuple(p for p in preferences if p.cycle == cycle)
+        if not courses:
+            raise ValueError(f"No courses found for cycle {cycle} in {base}.")
+
     teachers = load_teacher_params(params_dir / "teacher_params.csv", teachers)
     courses = load_course_params(params_dir / "course_params.csv", courses)
 
-    cycle = Cycle(teachers=teachers, courses=courses, preferences=preferences)
-    validate_cycle(cycle)
+    result = Cycle(teachers=teachers, courses=courses, preferences=preferences)
+    validate_cycle(result)
 
-    return cycle
+    return result
