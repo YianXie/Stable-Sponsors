@@ -1,0 +1,5 @@
+cycle, course_id, requires, min_sponsors, max_sponsors, male_slots, female_slots, source, status
+ 2027, INTL-1   , scuba   ,            2,            2,          1,            1,       , assumed
+ 2027, INTL-2   ,         ,            2,            2,          1,            1,       , assumed
+ 2027, INTL-3   ,         ,            2,            2,          1,            1,       , assumed
+ 2027, SING-1   ,         ,            1,            2,          0,            1,       , assumed

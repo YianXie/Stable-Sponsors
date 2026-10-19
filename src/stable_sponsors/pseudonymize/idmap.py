@@ -17,7 +17,9 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = (
+    Path(__file__).resolve().parents[3]
+)  # src/stable_sponsors/pseudonymize/idmap.py -> repo
 
 TITLES = {"mr", "mrs", "ms", "miss", "dr", "prof", "mx", "sir", "madam", "mme"}
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "phd", "edd", "md"}

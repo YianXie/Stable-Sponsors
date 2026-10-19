@@ -1,0 +1,102 @@
+schema_version: 1
+cycle: 2027
+source_docs:
+  procedure: "Faculty Sponsor Allocation Process - Interim Semester, as received"
+  diff: "docs/procedure-diff-v1.0.md"
+
+rules:
+  - id: 0
+    name: incumbency_preassignment
+    class: hard
+    description: Repeaters under the year limit are placed in their prior course before open selection.
+    params: {}
+    source: "Procedure §2.1; diff 0"
+    status: documented
+    notes: "Assumes that every listed repeater is eligible to teach the course they taught last year. If not, the rule will fail."
+
+  - id: 1
+    name: rank_preference
+    class: priority
+    description: Prefer placing teachers in higher-ranked choices.
+    params:
+      weights: [7, 6, 5, 4, 3, 2, 1]
+    source: "Procedure §2.2; diff 1"
+    status: documented
+
+  - id: 2
+    name: past_experience
+    class: priority
+    description: Teachers with more experience are preferred for certain courses.
+    params:
+      requirements_file: "course_params.csv"
+    source: "Procedure §3.2; diff 3"
+    status: deferred
+    notes: "Since no teacher experience data is available, this rule is deferred. If experience data is added, this rule will be implemented."
+
+  - id: 3
+    name: qualification_required
+    class: hard
+    description: Courses with a requirement (e.g. scuba) only take qualified teachers.
+    params: {}
+    source: "Procedure §3.3; diff 5"
+    status: documented
+    notes: "Assumes that the qualifications listed in CourseParams are accurate and complete. If a teacher is missing a qualification, the rule will fail."
+
+  - id: 4
+    name: only_ranked_courses
+    class: hard
+    description: A teacher who submitted is placed only in a course they ranked in that round.
+    params: {}
+    source: "diff 13"
+    status: assumed
+
+  - id: 5
+    name: slot_gender
+    class: hard
+    description: A slot marked MALE or FEMALE is filled only by a teacher of that gender.
+    params: {}
+    source: "diff 7: seen in form suffixes, not in procedure"
+    status: deferred
+    notes: "Since no teacher gender data is available, this rule is deferred. If gender data is added, this rule will be implemented."
+
+  - id: 6
+    name: round_precedence
+    class: priority
+    params:
+      bonus: { intl_r1: 20, intl_r2: 10, sg: 0 } # gaps > max rank weight (7)
+    status: assumed
+    notes: "Order assumed from the form sequence (02 → 03 → 04). Ask office whether SG is a fallback pool."
+
+  - id: 7
+    name: tie_break
+    class: tiebreak
+    description: Order when two teachers are equally qualified for a course.
+    params: {}
+    source: "diff 10"
+    status: assumed
+    notes: "Predicted reproduction failures concentrate here."
+
+  - id: 8
+    name: one_course_per_teacher
+    class: hard
+    description: Each teacher is assigned to at most one course.
+    params: {}
+    source: "diff 14"
+    status: assumed
+
+  - id: 9
+    name: course_capacity
+    class: hard
+    description: Each course is assigned at least its minimum and at most its maximum number of teachers.
+    params: {}
+    source: "diff 12"
+    status: assumed
+
+  - id: 10
+    name: courses_run_as_observed
+    class: hard
+    description: The set of running courses is fixed before sponsors are allocated.
+    params: {}
+    source: "inferred from run 2026-10-18 (8 submitters unplaced; course sets differ)"
+    status: assumed
+    notes: "Uses an outcome (which courses ran) as an input. Legitimate only if the office confirms the course list was set before sponsor allocation."

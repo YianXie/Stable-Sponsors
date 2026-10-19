@@ -874,3 +874,13 @@ def test_gender_slot_tags_map_to_one_course_and_are_kept(tmp_path):
     assert te.loc[m[f"ccruz@{D}"], "slot_genders_ranked"] == "female|male"
     ch = pd.read_csv(tmp_path / "derived/checks.csv", dtype=str)
     assert (ch["check"] == "ranked_both_male_and_female_slots").sum() == 1
+
+
+def test_leak_scan_ignores_hex_digests_but_not_names():
+    from stable_sponsors.pseudonymize.leakcheck import text_words
+
+    w = text_words('"outputs": "93ce0f1ab2", code NR-3ce91a, ce, Facade')
+    assert "ce" in w  # the standalone word is still caught
+    assert "facade" in w  # all-letter words are never treated as hex
+    w = text_words('"sha": "93ce0f1ab2d4", code NR-3ce91a')
+    assert "ce" not in w and "f" not in w and "ab" not in w

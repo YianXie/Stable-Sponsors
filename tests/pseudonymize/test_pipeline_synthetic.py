@@ -269,7 +269,7 @@ def test_repeaters_and_unknowns(world, built):
     )
     assert (t26["submitted_intl_r2"] == "").all(), "2026 had no round 2"
     got = {
-        t2p[r.teacher_id]: r.prior_course_id
+        t2p[r.teacher_id]: r.incumbent_course_id
         for r in t27.itertuples()
         if r.is_repeater == "True"
     }
