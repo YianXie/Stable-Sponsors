@@ -2,7 +2,6 @@ from collections import Counter
 from pathlib import Path
 
 import pandas as pd
-
 from ortools.sat.python import cp_model
 
 from stable_sponsors.data import (

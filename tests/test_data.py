@@ -50,7 +50,10 @@ def test_prior_code_is_translated_not_reused(tmp_path):
 
     ctx = build_ctx(cyc)
     incumbency_preassignment(ctx, {})
-    pinned = {ctx.model.proto.variables[c.linear.vars[0]].name for c in ctx.model.proto.constraints}
+    pinned = {
+        ctx.model.proto.variables[c.linear.vars[0]].name
+        for c in ctx.model.proto.constraints
+    }
     assert "x_T1000_INTL-2" in pinned
     assert "x_T1000_INTL-1" not in pinned
 
@@ -91,9 +94,16 @@ def test_discontinued_course_means_no_incumbency(tmp_path):
 
     ctx = build_ctx(cyc)
     incumbency_preassignment(ctx, {})
-    names = {ctx.model.proto.variables[c.linear.vars[0]].name for c in ctx.model.proto.constraints}
+    names = {
+        ctx.model.proto.variables[c.linear.vars[0]].name
+        for c in ctx.model.proto.constraints
+    }
     assert not any(n.startswith("x_T1000_") for n in names)
 
     # ...and placing them anywhere is not an incumbency violation
-    obs = (ObservedPlacement(cycle=2027, course_id="INTL-2", sponsor_slot=1, teacher_id="T1000"),)
+    obs = (
+        ObservedPlacement(
+            cycle=2027, course_id="INTL-2", sponsor_slot=1, teacher_id="T1000"
+        ),
+    )
     assert "T1000" not in violations(cyc, obs)["0 incumbency"]

@@ -198,7 +198,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     gone = sum(t.is_repeater and t.incumbent_course_id is None for t in cycle.teachers)
     if gone:
-        print(f"note: {gone} repeater(s) whose prior course was discontinued: no incumbency applied")
+        print(
+            f"note: {gone} repeater(s) whose prior course was discontinued: no incumbency applied"
+        )
 
     ### Check feasibility of hard rules, optionally excluding some
 

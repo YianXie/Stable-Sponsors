@@ -18,7 +18,9 @@ CYCLE = 2027
 def main() -> None:
     cfg = load_config("config/pseudonymize.yaml")
     derived, params = out_path(cfg, "derived"), out_path(cfg, "params")
-    cycle = load_cycle(derived, params, CYCLE, lineage_path=out_path(cfg, "key") / "course_lineage.csv")
+    cycle = load_cycle(
+        derived, params, CYCLE, lineage_path=out_path(cfg, "key") / "course_lineage.csv"
+    )
     observed = load_observed_placements(derived / "placements.csv", cycle)
     v = violations(cycle, observed)
 
