@@ -9,6 +9,8 @@
     "preassignment",
     "pseudonymization",
     "pseudonymize",
+    "pytest",
+    "timespec",
     "unranked"
   ]
 }

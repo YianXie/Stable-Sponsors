@@ -245,6 +245,4 @@ pyrightconfig.json
 # ---- interim data: never commit spreadsheets or pipeline output, even by accident
 docs/my-understanding-of-rules-*.md
 docs/procedure-doc-rules-*.md
-# docs/procedure-diff-*.md
 config/pseudonymize.yaml
-config/rules-2027.yaml

@@ -178,7 +178,7 @@ def _write(df: pd.DataFrame, path: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("--config", default="config/pseudonymize.yaml")
     ap.add_argument("--cycle", required=True)
     ap.add_argument("--intl", default="2,2", help="min,max sponsors for intl courses")

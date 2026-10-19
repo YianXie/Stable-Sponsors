@@ -1,10 +1,10 @@
 from dataclasses import replace
 
 import pytest
-import yaml
 from ortools.sat.python import cp_model
 
 from stable_sponsors.data import Cycle, Preference, load_observed_placements
+from stable_sponsors.model import load_hard_rules
 from stable_sponsors.rules.context import Ctx, build_ctx
 from stable_sponsors.rules.hard import (
     course_capacity,
@@ -102,7 +102,7 @@ def test_no_repeaters_adds_no_constraints(toy_cycle: Cycle) -> None:
     no_rep = replace(
         toy_cycle,
         teachers=tuple(
-            replace(t, is_repeater=False, prior_course_id=None)
+            replace(t, is_repeater=False, incumbent_course_id=None)
             for t in toy_cycle.teachers
         ),
     )
@@ -122,7 +122,7 @@ def test_non_qualified_teacher_cannot_be_assigned(ctx: Ctx) -> None:
     """
 
     qualification_required(ctx, {})
-    force(ctx, ("T1001",), "INTL-1")
+    force(ctx, ("T1003",), "INTL-1")
     status = solve(ctx)
     assert status == cp_model.INFEASIBLE
 
@@ -204,7 +204,7 @@ def test_unranked_course_is_infeasible(ctx: Ctx) -> None:
     """
 
     only_ranked_courses(ctx, {})
-    force(ctx, ("T1002",), "SING-1")  # T1002 has not ranked SING-1
+    force(ctx, ("T1001",), "INTL-3")  # T1001 has not ranked INTL-3
     status = solve(ctx)
     assert status == cp_model.INFEASIBLE
 
@@ -217,7 +217,7 @@ def test_ranked_course_is_feasible(ctx: Ctx) -> None:
     """
 
     only_ranked_courses(ctx, {})
-    force(ctx, ("T1001",), "INTL-2")  # T1001 has ranked INTL-2
+    force(ctx, ("T1001",), "INTL-1")  # T1001 has ranked INTL-1
     status = solve(ctx)
     assert status in FEASIBLE
 
@@ -381,13 +381,14 @@ def test_missing_bounds_raises(ctx):
 ### Observed placement tests
 
 
-RULES = yaml.safe_load((REPO_ROOT / "config" / "rules-2027.yaml").read_text())["rules"]
+RULES_PATH = REPO_ROOT / "config" / "rules-2027.yaml"
 
 
 def test_observed_toy_placement_satisfies_all_hard_rules(toy_cycle: Cycle) -> None:
     ctx = build_ctx(toy_cycle)
-    for r in RULES:
-        if r["class"] == "hard" and r["status"] != "deferred":
+    rules = load_hard_rules(RULES_PATH)
+    for r in rules:
+        if r["status"] != "deferred":
             ENCODERS[r["id"]](ctx, r["params"])
     for p in load_observed_placements(TOY_DIR / "placements.csv", toy_cycle):
         ctx.model.add(ctx.x[(p.teacher_id, p.course_id)] == 1)

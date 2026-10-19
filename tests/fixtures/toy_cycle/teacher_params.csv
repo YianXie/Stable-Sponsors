@@ -1,6 +1,6 @@
 cycle, teacher_id, qualifications , gender, source, status
- 2027, T1000     , scuba;first_aid, male  ,       , assumed
- 2027, T1001     ,                , female,       , assumed
- 2027, T1002     , first_aid      , male  ,       , assumed
+ 2027, T1000     , scuba;first_aid, female,       , assumed
+ 2027, T1001     , scuba          , male  ,       , assumed
+ 2027, T1002     , first_aid      , female,       , assumed
  2027, T1003     ,                , female,       , assumed
- 2027, T1004     , scuba          , female,       , assumed
+ 2027, T1004     ,                , male  ,       , assumed

@@ -18,6 +18,7 @@ class Teacher:
         teacher_id (str): The unique identifier for the teacher.
         is_repeater (bool): Indicates if the teacher is a repeater.
         prior_course_id (str | None): The ID of the prior course, if any.
+        incumbent_course_id (str | None): The ID of the incumbent course, if any.
         submitted_intl_r1 (bool): Indicates if the teacher submitted his/her preferences in the first international round.
         submitted_intl_r2 (bool): Indicates if the teacher submitted his/her preferences in the second international round.
         submitted_sg (bool): Indicates if the teacher submitted his/her preferences in the Singapore round.
@@ -31,6 +32,7 @@ class Teacher:
     teacher_id: str
     is_repeater: bool
     prior_course_id: str | None
+    incumbent_course_id: str | None
     submitted_intl_r1: bool
     submitted_intl_r2: bool
     submitted_sg: bool
@@ -166,6 +168,67 @@ def _read_csv(path: Path) -> pd.DataFrame:
     return df.apply(lambda col: col.str.strip()).replace("", np.nan)
 
 
+def resolve_incumbency(
+    teachers: tuple[Teacher, ...], courses: tuple[Course, ...], path: Path
+) -> tuple[Teacher, ...]:
+    """Map each repeater's prior course (prior-year code) to this year's code.
+
+    Course codes are per-year: the same trip can change code, and the same code
+    can mean a different trip. The lineage file is the only bridge. A repeater
+    with no lineage row is an error, never a fallback to "same code", because
+    that fallback is exactly how the bug this guards against happened.
+
+    Lineage CSV columns: prior_course_id, course_id (blank = discontinued),
+    plus optional cycle (the target year) and prior_cycle, basis, status, note.
+
+    Args:
+        teachers (tuple[Teacher, ...]): teachers of a single cycle.
+        courses (tuple[Course, ...]): this cycle's courses, to validate targets.
+        path (Path): the lineage CSV.
+
+    Raises:
+        ValueError: missing columns, duplicate rows, a target not in this cycle,
+            or a repeater whose prior course has no lineage row.
+
+    Returns:
+        tuple[Teacher, ...]: teachers with incumbent_course_id set for repeaters
+            (None when their prior course was discontinued).
+    """
+
+    df = _read_csv(path)
+    missing = {"prior_course_id", "course_id"} - set(df.columns)
+    if missing:
+        raise ValueError(f"{path.name} is missing columns {sorted(missing)}")
+    if "cycle" in df.columns:
+        df = df[df["cycle"].astype(int).isin({t.cycle for t in teachers})]
+
+    dupes = sorted(set(df.loc[df["prior_course_id"].duplicated(), "prior_course_id"]))
+    if dupes:
+        raise ValueError(f"{path.name} has more than one row for {dupes}")
+
+    lineage: dict[str, str | None] = {
+        str(r.prior_course_id): (None if pd.isna(r.course_id) else str(r.course_id))
+        for r in df.itertuples()
+    }
+    course_ids = {c.course_id for c in courses}
+    unknown = sorted(
+        v for v in lineage.values() if v is not None and v not in course_ids
+    )
+    if unknown:
+        raise ValueError(f"{path.name} maps to courses not in this cycle: {unknown}")
+
+    out = []
+    for t in teachers:
+        if t.is_repeater:
+            if t.prior_course_id not in lineage:
+                raise ValueError(
+                    f"{t.teacher_id}: no lineage row for prior course {t.prior_course_id}"
+                )
+            t = replace(t, incumbent_course_id=lineage[t.prior_course_id])
+        out.append(t)
+    return tuple(out)
+
+
 def load_teachers(
     path: Path,
 ) -> tuple[Teacher, ...]:
@@ -190,6 +253,7 @@ def load_teachers(
                 prior_course_id=str(row["prior_course_id"])
                 if pd.notna(row["prior_course_id"])
                 else None,
+                incumbent_course_id=None,  # This will be resolved later using resolve_incumbency
                 submitted_intl_r1=_bool(row["submitted_intl_r1"]),
                 submitted_intl_r2=_bool(row["submitted_intl_r2"]),
                 submitted_sg=_bool(row["submitted_sg"]),
@@ -274,6 +338,7 @@ def load_teacher_params(
     """
 
     df = _read_csv(path)
+    df = df[df["cycle"].astype(int) == teachers[0].cycle]
 
     enriched_teachers = []
     for teacher in teachers:
@@ -314,6 +379,7 @@ def load_course_params(path: Path, courses: tuple[Course, ...]) -> tuple[Course,
     """
 
     df = _read_csv(path)
+    df = df[df["cycle"].astype(int) == courses[0].cycle]
 
     enriched_courses = []
     for course in courses:
@@ -517,7 +583,10 @@ def validate_cycle(cycle: Cycle) -> None:
 
 
 def load_cycle(
-    base: Path, params_dir: Path | None = None, cycle: int | None = None
+    base: Path,
+    params_dir: Path | None = None,
+    cycle: int | None = None,
+    lineage_path: Path | None = None,
 ) -> Cycle:
     """Loads a cycle of teacher-course preferences from CSV files in the specified directory.
 
@@ -525,6 +594,7 @@ def load_cycle(
         base (Path): The base path to the directory containing the CSV files.
         params_dir (Path | None, optional): An optional path to the directory containing parameter CSV files. If not provided, it defaults to the base path.
         cycle (int | None, optional): Keep only rows for this cycle. derived/ holds every cycle in the same files, so pass this for real data. None keeps all rows (fine for single-cycle fixtures).
+        lineage_path (Path | None, optional): The prior-year -> this-year course lineage CSV. Defaults to params_dir / "course_lineage.csv".
 
     Returns:
         Cycle: An instance of the Cycle class containing teachers, courses, and preferences.
@@ -548,9 +618,11 @@ def load_cycle(
         teachers = tuple(t for t in teachers if t.cycle == cycle)
         courses = tuple(c for c in courses if c.cycle == cycle)
         preferences = tuple(p for p in preferences if p.cycle == cycle)
-        if not courses:
-            raise ValueError(f"No courses found for cycle {cycle} in {base}.")
 
+    # Resolve after filtering: lineage maps one prior year into one target year.
+    teachers = resolve_incumbency(
+        teachers, courses, lineage_path or params_dir / "course_lineage.csv"
+    )
     teachers = load_teacher_params(params_dir / "teacher_params.csv", teachers)
     courses = load_course_params(params_dir / "course_params.csv", courses)
 

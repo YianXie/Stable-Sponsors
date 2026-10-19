@@ -19,7 +19,9 @@ def test_exclude_skips_rule(toy_cycle):
 
 
 def test_assignment_respects_incumbency(toy_cycle):
-    assert check_feasibility(toy_cycle, RULES).assignment["T1000"] == "INTL-1"
+    assignment = check_feasibility(toy_cycle, RULES).assignment
+    assert assignment is not None
+    assert assignment["T1000"] == "INTL-1"
 
 
 def test_diagnose_finds_planted_conflict(toy_cycle):

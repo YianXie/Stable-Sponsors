@@ -25,3 +25,14 @@ module-name = "stable_sponsors"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tools"]
+
+[tool.ruff]
+exclude = [
+    ".git",
+    ".venv",
+    "build",
+    "dist",
+    "migrations",
+    ".agents",
+    ".claude",
+]

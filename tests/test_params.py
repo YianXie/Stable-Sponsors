@@ -45,7 +45,9 @@ def test_other_cycles_ignored(toy):
 
 def test_unknown_course_type_raises(toy):
     with pytest.raises(ValueError, match="no default capacity"):
-        draft_course_params(toy["courses"], toy["preferences"], "2027", {"intl": (2, 2)})
+        draft_course_params(
+            toy["courses"], toy["preferences"], "2027", {"intl": (2, 2)}
+        )
 
 
 def test_merge_keeps_hand_edits_and_reports_orphans(toy):
@@ -64,7 +66,7 @@ def test_merge_keeps_hand_edits_and_reports_orphans(toy):
 
 def test_output_loads_with_data_py(toy, tmp_path):
     """The drafted files must be readable by load_cycle without edits."""
-    for name in ("courses", "teachers", "preferences"):
+    for name in ("courses", "teachers", "preferences", "course_lineage"):
         (tmp_path / f"{name}.csv").write_text((TOY / f"{name}.csv").read_text())
     draft_course_params(toy["courses"], toy["preferences"], "2027", CAP).to_csv(
         tmp_path / "course_params.csv", index=False

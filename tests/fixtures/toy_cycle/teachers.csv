@@ -1,6 +1,6 @@
 cycle, teacher_id, is_repeater, prior_course_id, submitted_intl_r1, submitted_intl_r2, submitted_sg, is_placed, slot_genders_ranked, placed_without_submission
  2027, T1000     , True       , INTL-1         , False            , False            , False       , True     ,                    , True
- 2027, T1001     , False      ,                , True             , False            , True        , True     ,                    , False
- 2027, T1002     , False      ,                , True             , False            , False       , True     , male               , False
- 2027, T1003     , False      ,                , True             , False            , False       , True     ,                    , False
- 2027, T1004     , False      ,                , False            , False            , False       , True     ,                    , False
+ 2027, T1001     , False      ,                , True             , False            , True        , True     , male               , False
+ 2027, T1002     , False      ,                , True             , False            , True        , True     , female             , False
+ 2027, T1003     , False      ,                , True             , False            , True        , True     , female             , False
+ 2027, T1004     , True       , INTL-2         , False            , False            , False       , True     ,                    , False

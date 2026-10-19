@@ -10,12 +10,20 @@ def incumbency_preassignment(ctx: Ctx, params: dict) -> None:
     Args:
         ctx (Ctx): the context
         params (dict): the parameters for the course, from the yaml config file
+
+    Raises:
+        ValueError: If a repeater's incumbent course is not in the current cycle. Repeaters whose prior course was discontinued (incumbent_course_id is None) are skipped.
     """
 
     for teacher in ctx.cycle.teachers:
         if teacher.is_repeater:
-            course_id = teacher.prior_course_id
-            assert course_id is not None, "Repeater teacher must have a prior course ID"
+            course_id = teacher.incumbent_course_id
+            if course_id is None:
+                continue  # prior course discontinued (lineage): nothing to repeat into
+            if course_id not in [c.course_id for c in ctx.cycle.courses]:
+                raise ValueError(
+                    f"Repeater teacher {teacher.teacher_id} has prior course ID {course_id} which is not in the current cycle's courses."
+                )
             ctx.model.add(ctx.x[(teacher.teacher_id, course_id)] == 1)
 
 
@@ -48,7 +56,9 @@ def only_ranked_courses(ctx: Ctx, params: dict) -> None:
 
     ranked = {(p.teacher_id, p.course_id) for p in ctx.cycle.preferences}
     ranked |= {
-        (t.teacher_id, t.prior_course_id) for t in ctx.cycle.teachers if t.is_repeater
+        (t.teacher_id, t.incumbent_course_id)
+        for t in ctx.cycle.teachers
+        if t.is_repeater and t.incumbent_course_id is not None
     }
     submitters = {p.teacher_id for p in ctx.cycle.preferences}
 
@@ -144,3 +154,15 @@ def course_capacity(ctx: Ctx, params: dict) -> None:
             sum(ctx.x[(t.teacher_id, course.course_id)] for t in ctx.cycle.teachers)
             <= max_capacity * ctx.y[course.course_id]
         )
+
+
+@register(10)
+def courses_run_as_observed(ctx: Ctx, params: dict) -> None:
+    """Treat the set of running courses as given (decided before sponsor allocation).
+
+    Args:
+        ctx (Ctx): The context
+        params (dict): The parameters for the course, from the yaml config file
+    """
+    for c in ctx.cycle.courses:
+        ctx.model.add(ctx.y[c.course_id] == int(c.ran))

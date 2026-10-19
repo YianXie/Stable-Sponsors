@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ortools.sat.python import cp_model
 
@@ -15,12 +15,14 @@ class Ctx:
         course_params (dict[str, CourseParams]): The parameters for each course.
         x (dict[tuple[str, str], cp_model.IntVar]): A dictionary mapping teacher-course pairs to boolean variables.
         y (dict[str, cp_model.IntVar]): A dictionary mapping courses to boolean variables.
+        objective (list): A list of terms to be added to the objective function.
     """
 
     model: cp_model.CpModel
     cycle: Cycle
     x: dict[tuple[str, str], cp_model.IntVar]
     y: dict[str, cp_model.IntVar]
+    objective: list = field(default_factory=list)
 
 
 def build_ctx(cycle: Cycle) -> Ctx:

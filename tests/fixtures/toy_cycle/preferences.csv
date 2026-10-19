@@ -1,8 +1,7 @@
 cycle, teacher_id, round  , rank, course_id, slot_gender
  2027, T1001     , intl_r1,    1, INTL-1   , male
- 2027, T1001     , intl_r1,    2, INTL-2   , 
  2027, T1001     , sg     ,    1, SING-1   , 
- 2027, T1002     , intl_r1,    2, INTL-1   , 
- 2027, T1002     , intl_r1,    3, INTL-2   , 
- 2027, T1003     , intl_r1,    2, INTL-2   , female
- 2027, T1003     , intl_r1,    3, INTL-1   , 
+ 2027, T1002     , intl_r1,    1, INTL-2   , female
+ 2027, T1002     , sg     ,    1, SING-1   , 
+ 2027, T1003     , intl_r1,    1, INTL-2   , female
+ 2027, T1003     , sg     ,    1, SING-1   , 
