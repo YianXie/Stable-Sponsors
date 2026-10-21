@@ -428,6 +428,9 @@ def load_course_params(path: Path, courses: tuple[Course, ...]) -> tuple[Course,
 def load_observed_placements(path: Path, cycle: Cycle) -> tuple[ObservedPlacement, ...]:
     """Reads observed placement data from a CSV file and returns a list of ObservedPlacement objects.
 
+    Only rows with status "assigned" in the cycle's year are placements: the file
+    also holds empty sponsor slots (no teacher) and, in derived/, every cycle.
+
     Args:
         path (Path): The path to the CSV file containing observed placement data.
         cycle (Cycle): The Cycle object to which the observed placements belong.
@@ -437,6 +440,8 @@ def load_observed_placements(path: Path, cycle: Cycle) -> tuple[ObservedPlacemen
     """
 
     df = _read_csv(path)
+    df = df[df["status"] == "assigned"]
+    df = df[df["cycle"].astype(int).isin({t.cycle for t in cycle.teachers})]
     placements_list: list[ObservedPlacement] = []
 
     for _, row in df.iterrows():

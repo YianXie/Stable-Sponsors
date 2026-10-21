@@ -107,3 +107,21 @@ def test_discontinued_course_means_no_incumbency(tmp_path):
         ),
     )
     assert "T1000" not in violations(cyc, obs)["0 incumbency"]
+
+
+# --- observed placements ---------------------------------------------------
+
+
+def test_observed_placements_keep_assigned_rows_of_this_cycle(tmp_path):
+    """derived/placements.csv also holds empty sponsor slots (no teacher) and
+    other cycles' rows. Those are not placements in this cycle."""
+    cycle = load_cycle(TOY)
+    p = tmp_path / "placements.csv"
+    p.write_text(
+        (TOY / "placements.csv").read_text().rstrip("\n")
+        + "\n2027, INTL-1, 3, , blank_in_source"
+        + "\n2027, INTL-2, 3, , blank_in_source"
+        + "\n2026, INTL-1, 1, T1001, assigned\n"
+    )
+    placements = load_observed_placements(p, cycle)
+    assert placements == load_observed_placements(TOY / "placements.csv", cycle)

@@ -173,16 +173,18 @@ def diagnose(cycle, rules) -> dict:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the model for a given cycle, check feasibility of hard rules, and optionally optimize."""
+
     ### Parse command line arguments
 
     ap = argparse.ArgumentParser(
-        description="Check whether the hard rules are feasible and whether the optimal assignment is determined (no ties) for a given cycle"
+        description="Check whether the hard rules are feasible and run the optimal assignment for the given cycle.  Writes a JSON report to runs/."
     )
     ap.add_argument("--config", default="config/pseudonymize.yaml")
     ap.add_argument("--rules", default="config/rules-2027.yaml", type=Path)
     ap.add_argument("--cycle", default=2027, type=int)
     ap.add_argument(
-        "--exclude", nargs="*", type=int, default=[], help="rule ids to skip, e.g. 5"
+        "--exclude", nargs="*", type=int, default=[], help="rule ids to skip, e.g. 10"
     )
     ap.add_argument("--time-limit", default=60.0, type=float)
     ap.add_argument("--optimize", action="store_true")
@@ -294,7 +296,7 @@ def main(argv: list[str] | None = None) -> None:
                 f"  contested, no submission: {len(contested_non)}   (score 0 anywhere; not evidence of discretion)"
             )
 
-            report["optimal"] = asdict(opt)
+            report["optimal_result"] = asdict(opt)
             report["determinacy"] = det
             report["contested_submitters"] = contested_sub
             report["contested_non_submitters"] = contested_non
@@ -303,7 +305,7 @@ def main(argv: list[str] | None = None) -> None:
 
     runs = out_path(config, "runs")
     runs.mkdir(parents=True, exist_ok=True)
-    path = runs / f"{report['when'].replace(':', '')}_feasibility.json"
+    path = runs / f"{report['when'].replace(':', '')}_model_run.json"
     path.write_text(json.dumps(report, indent=2))
     print(f"\nwrote {path}")
 

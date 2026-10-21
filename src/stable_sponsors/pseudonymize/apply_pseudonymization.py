@@ -356,7 +356,7 @@ def run(cfg, quiet=False):
                     "cycle": k,
                     "teacher_id": t,
                     "is_repeater": (t in rep) if cy.repeaters is not None else "",
-                    "incumbent_course_id": rep.get(t, ""),
+                    "prior_course_id": rep.get(t, ""),
                     "submitted_intl_r1": (t in submitted["intl_r1"])
                     if "intl_r1" in cy.rounds
                     else "",
@@ -467,7 +467,7 @@ def run(cfg, quiet=False):
     keys = [cy.key for cy in cycles]
     for prev, cur in itertools.pairwise(keys):
         cur_rep = {
-            t["teacher_id"]: t["incumbent_course_id"]
+            t["teacher_id"]: t["prior_course_id"]
             for t in teachers
             if t["cycle"] == cur and t["is_repeater"] is True
         }
@@ -511,7 +511,7 @@ def run(cfg, quiet=False):
                 "cycle",
                 "teacher_id",
                 "is_repeater",
-                "incumbent_course_id",
+                "prior_course_id",
                 "submitted_intl_r1",
                 "submitted_intl_r2",
                 "submitted_sg",

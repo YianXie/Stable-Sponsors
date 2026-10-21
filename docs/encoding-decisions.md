@@ -41,3 +41,11 @@ After manually checking the five different incumbency placements, 4 out of 5 of 
 The observed allocation breaks rule 0 (×3) and rule 4 (×12). Capacity, qualifications and the course set produce no violations.
 Fixed this week: cross-year course identity (lineage table; 4 incumbency violations were a pipeline artefact).
 Open: the 3 remaining incumbency cases (the office’s retrospective prior-course column vs 2026 records; audit blocked because 2026 isn’t in derived/); the 12 only-ranked cases (round-order sensitivity, then the contest table); all parameters still assumed pending the office.
+
+**2026-10-21**
+
+Since PHIL-4 has 3 sponsors, while the rest has only 2, I will hard-code it into the constraint (i.e. min = max = 3).
+
+A repeater's course can be discontinued the next year, so `incumbent_course_id` may be blank for a repeater. The validation only requires `prior_course_id` (last year's code) to be present.
+
+Lineage stays in `data.py`. Stage 2 does not apply it: `derived/teachers.csv` holds the prior-year code (the prior-course alias is matched by code against this year's catalogue, so a reused code points at the wrong trip). Without lineage the observed allocation breaks rule 0 ×5 instead of ×3. The stage-2 column, renamed to `incumbent_course_id` in week 3, is back to `prior_course_id`, because it is not the incumbent course until lineage resolves it.
