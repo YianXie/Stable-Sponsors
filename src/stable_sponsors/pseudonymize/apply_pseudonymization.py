@@ -1,6 +1,6 @@
 """Stage 2 of 2: apply the accepted key and write the analysis dataset.
 
-    python src/apply_pseudonymization.py --config config/pseudonymize.yaml
+    uv run python -m stable_sponsors.pseudonymize.apply_pseudonymization --config config/pseudonymize.yaml
 
 Reads key/identity.csv, key/course_alias.csv and key/course_catalogue.csv
 (produced by build_crosswalk.py --accept) and refuses to write anything if a
@@ -34,16 +34,15 @@ from datetime import UTC, datetime
 import pandas as pd
 
 from stable_sponsors.pseudonymize.build_crosswalk import (
-    ALIAS_DRAFT,
     ALIAS_FINAL,
-    CAT_DRAFT,
     CAT_FINAL,
-    ID_DRAFT,
     ID_FINAL,
+    KEY_FILES,
     is_yes,
     node_key,
 )
 from stable_sponsors.pseudonymize.idmap import (
+    DEFAULT_CONFIG,
     NONE_COURSE,
     REPO_ROOT,
     course_key,
@@ -52,7 +51,7 @@ from stable_sponsors.pseudonymize.idmap import (
     sha256_file,
     split_slot_tag,
 )
-from stable_sponsors.pseudonymize.sources import load_all
+from stable_sponsors.pseudonymize.sources import ROUNDS, load_all
 
 CODE_COLUMNS = [
     "req_certification",
@@ -130,11 +129,7 @@ def load_course_key(cfg):
 
 def unaccepted_edits(cfg):
     out = []
-    for d, f in (
-        (ID_DRAFT, ID_FINAL),
-        (ALIAS_DRAFT, ALIAS_FINAL),
-        (CAT_DRAFT, CAT_FINAL),
-    ):
+    for d, f in KEY_FILES:
         pd_, pf = out_path(cfg, d), out_path(cfg, f)
         if pd_.exists() and pf.exists() and sha256_file(pd_) != sha256_file(pf):
             out.append(d)
@@ -189,14 +184,14 @@ def run(cfg, quiet=False):
             }
         )
 
+    def tid_email(email, where):
+        t = ident.get(("E", email))
+        if not t:
+            missing["email not in identity key"].append(where)
+        return t
+
     for cy in cycles:
         k = cy.key
-
-        def tid_email(email, where):
-            t = ident.get(("E", email))
-            if not t:
-                missing["email not in identity key"].append(where)
-            return t
 
         # ---- repeaters
         rep = {}
@@ -226,7 +221,7 @@ def run(cfg, quiet=False):
                 continue
             key = (r.round, t)
             if key in chosen:
-                prev = chosen[key][1]
+                prev = chosen[key]
                 policy = cfg["duplicate_submissions"]
                 if policy == "error":
                     missing["same teacher submitted twice under two addresses"].append(
@@ -244,14 +239,15 @@ def run(cfg, quiet=False):
                     f"{r.round} rows {earlier.row} and {later.row}; kept row {keep.row} "
                     f"({policy}); the other row's free text is not used",
                 )
-                chosen[key] = (t, keep)
+                chosen[key] = keep
                 continue
-            chosen[key] = (t, r)
-        for t, r in chosen.values():
+            chosen[key] = r
+        for (_, t), r in chosen.items():
             submitted[r.round].add(t)
             if r.name:
-                nk = node_key(r.name)
-                tn = ident.get(nk) if nk else None
+                # ident never has a None key (load_identity rejects it), so an
+                # unusable name simply finds no teacher
+                tn = ident.get(node_key(r.name))
                 if tn and tn != t:
                     check(
                         k,
@@ -313,64 +309,53 @@ def run(cfg, quiet=False):
         # ---- placements
         placed = defaultdict(list)
         for s in cy.slots:
-            if s.status != "named":
-                places.append(
-                    {
-                        "cycle": k,
-                        "course_id": s.code,
-                        "sponsor_slot": s.slot,
-                        "teacher_id": "",
-                        "status": s.status,
-                    }
-                )
-                continue
-            nk = node_key(s.sponsor)
-            t = ident.get(nk) if nk else None
-            if not t:
-                missing["sponsor not in identity key"].append(
-                    f"{k} placements row {s.row} ({s.code} slot {s.slot})"
-                )
-                continue
-            placed[t].append(s.code)
+            t, status = "", s.status
+            if s.status == "named":
+                t = ident.get(node_key(s.sponsor))
+                if not t:
+                    missing["sponsor not in identity key"].append(
+                        f"{k} placements row {s.row} ({s.code} slot {s.slot})"
+                    )
+                    continue
+                placed[t].append(s.code)
+                status = "assigned"
             places.append(
                 {
                     "cycle": k,
                     "course_id": s.code,
                     "sponsor_slot": s.slot,
                     "teacher_id": t,
-                    "status": "assigned",
+                    "status": status,
                 }
             )
         placed = dict(placed)  # plain dict: lookups below must not insert
         placed_by_cycle[k] = placed
 
         # ---- teachers in this cycle
-        present = set(rep) | set(placed)
-        for ts in submitted.values():
-            present |= ts
+        present = set(rep).union(placed, *submitted.values())
         for t in sorted(present):
             any_form = any(t in submitted[rd] for rd in cy.rounds)
             mine = placed.get(t, [])
+            placed_no_form = bool(mine) and not any_form and t not in rep
             teachers.append(
                 {
                     "cycle": k,
                     "teacher_id": t,
                     "is_repeater": (t in rep) if cy.repeaters is not None else "",
                     "prior_course_id": rep.get(t, ""),
-                    "submitted_intl_r1": (t in submitted["intl_r1"])
-                    if "intl_r1" in cy.rounds
-                    else "",
-                    "submitted_intl_r2": (t in submitted["intl_r2"])
-                    if "intl_r2" in cy.rounds
-                    else "",
-                    "submitted_sg": (t in submitted["sg"]) if "sg" in cy.rounds else "",
+                    **{
+                        f"submitted_{rd}": (t in submitted[rd])
+                        if rd in cy.rounds
+                        else ""
+                        for rd in ROUNDS
+                    },
                     "is_placed": bool(mine),
-                    # unknown for a cycle without a repeat file: they may be repeaters
                     "slot_genders_ranked": "|".join(sorted(slot_genders.get(t, ()))),
+                    # unknown for a cycle without a repeat file: they may be repeaters
                     "placed_without_submission": (
                         ""
-                        if (cy.repeaters is None and mine and not any_form)
-                        else bool(mine) and not any_form and t not in rep
+                        if placed_no_form and cy.repeaters is None
+                        else placed_no_form
                     ),
                 }
             )
@@ -401,7 +386,7 @@ def run(cfg, quiet=False):
                 check(k, "round2_without_round1", t)
             if any_form and not mine:
                 check(k, "submitted_but_not_placed", t)
-            if cy.repeaters is not None and mine and not any_form and t not in rep:
+            if placed_no_form and cy.repeaters is not None:
                 check(k, "placed_without_any_response", t, "|".join(mine))
             if mine and ranked.get(t) and not (set(mine) & ranked[t]):
                 check(
@@ -423,11 +408,8 @@ def run(cfg, quiet=False):
         # listed Singapore course missing from the sheet; only unused NR- ids are dropped
         cids |= {cid for (c, cid), m in cat.items() if c == k and m["trip_code"]}
         cids.discard(NONE_COURSE)
-        assigned = Counter(
-            p["course_id"]
-            for p in places
-            if p["cycle"] == k and p["status"] == "assigned"
-        )
+        # the same codes as this cycle's "assigned" rows in places
+        assigned = Counter(code for codes in placed.values() for code in codes)
         for cid in sorted(cids):
             meta = cat.get((k, cid))
             if not meta:
@@ -585,10 +567,7 @@ def run(cfg, quiet=False):
         "pandas": pd.__version__,
         "config_sha256": cfg["_config_sha256"],
         "inputs_sha256": {cy.key: cy.inputs for cy in cycles},
-        "key_sha256": {
-            rel: sha256_file(out_path(cfg, rel))
-            for rel in (ID_FINAL, ALIAS_FINAL, CAT_FINAL)
-        },
+        "key_sha256": {rel: sha256_file(out_path(cfg, rel)) for _, rel in KEY_FILES},
         "outputs_sha256": {
             f"{n}.csv": sha256_file(derived / f"{n}.csv") for n in tables
         },
@@ -675,7 +654,7 @@ def write_freetext(cfg, items):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--config", default="config/pseudonymize.yaml")
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
     args = ap.parse_args()
     run(load_config(args.config))
 

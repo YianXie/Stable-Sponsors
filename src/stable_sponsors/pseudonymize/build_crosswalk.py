@@ -1,8 +1,8 @@
 """Stage 1 of 2: propose the identity key and the course mapping for review.
 
-    python src/build_crosswalk.py --config config/pseudonymize.yaml
+    uv run python -m stable_sponsors.pseudonymize.build_crosswalk --config config/pseudonymize.yaml
     # review the three drafts under key/, set confirmed=y on every row, then
-    python src/build_crosswalk.py --config config/pseudonymize.yaml --accept
+    uv run python -m stable_sponsors.pseudonymize.build_crosswalk --config config/pseudonymize.yaml --accept
 
 Writes under private_root/key/:
     identity_draft.csv         one row per email or name; rows sharing a teacher_id
@@ -24,7 +24,6 @@ IDs only, so it is safe to share.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import secrets
@@ -36,10 +35,12 @@ from datetime import datetime
 import pandas as pd
 
 from stable_sponsors.pseudonymize.idmap import (
+    DEFAULT_CONFIG,
     NONE_COURSE,
     CourseIndex,
     _ratio,
     course_key,
+    course_name_hash,
     load_config,
     looks_like_email,
     match_score,
@@ -57,6 +58,7 @@ from stable_sponsors.pseudonymize.sources import load_all
 ID_DRAFT, ID_FINAL = "key/identity_draft.csv", "key/identity.csv"
 ALIAS_DRAFT, ALIAS_FINAL = "key/course_alias_draft.csv", "key/course_alias.csv"
 CAT_DRAFT, CAT_FINAL = "key/course_catalogue_draft.csv", "key/course_catalogue.csv"
+KEY_FILES = ((ID_DRAFT, ID_FINAL), (ALIAS_DRAFT, ALIAS_FINAL), (CAT_DRAFT, CAT_FINAL))
 DRAFT_MANIFEST = "key/draft_inputs.json"
 ISSUED = "key/issued_ids.txt"  # every teacher_id ever handed out; never reused
 YES = {"y", "yes", "true", "1"}
@@ -100,7 +102,12 @@ def node_key(raw):
 
 def nr_id(offering_name: str) -> str:
     """Stable id for an offered course that has no trip code (did not run)."""
-    return "NR-" + hashlib.sha1(norm_course(offering_name).encode()).hexdigest()[:6]
+    return "NR-" + course_name_hash(offering_name)
+
+
+def stamped_name(p):
+    """p's file name with the current time before the suffix, for set-aside copies."""
+    return f"{p.stem}.{datetime.now().strftime('%Y%m%d-%H%M%S')}{p.suffix}"
 
 
 def backup(cfg, rel):
@@ -108,8 +115,7 @@ def backup(cfg, rel):
     if p.exists():
         bdir = out_path(cfg, "key/backup")
         bdir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        shutil.copy2(p, bdir / f"{p.stem}.{ts}{p.suffix}")
+        shutil.copy2(p, bdir / stamped_name(p))
 
 
 def read_prior(cfg, final_rel, draft_rel, key_fn):
@@ -125,8 +131,7 @@ def read_prior(cfg, final_rel, draft_rel, key_fn):
             if lacking:  # written by an earlier version of the pipeline: set it aside
                 legacy = out_path(cfg, "key/backup/legacy")
                 legacy.mkdir(parents=True, exist_ok=True)
-                ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-                p.rename(legacy / f"{p.stem}.{ts}{p.suffix}")
+                p.rename(legacy / stamped_name(p))
                 print(
                     f"  ! {rel} is in an older format (no {sorted(lacking)} column); "
                     "moved to key/backup/legacy/ and ignored. Its confirmations are not "
@@ -338,7 +343,7 @@ def build_identity(cfg, cycles):
 
     # ---- prior assignments: confirmed rows are locks, unconfirmed are hints
     prior, prior_src = read_prior(cfg, ID_FINAL, ID_DRAFT, id_key)
-    reserved, stale, new_ids = set(issued_ids(cfg)), 0, {}
+    reserved, new_ids = issued_ids(cfg), {}
     stale_rows = []
     if prior is not None:
         if "proposed_id" not in prior.columns:
@@ -357,7 +362,6 @@ def build_identity(cfg, cycles):
                 nodes[k].prior_confirmed = is_yes(r.confirmed) and bool(tid)
                 nodes[k].prior_notes = r.notes
             else:
-                stale += 1
                 stale_rows.append(r._asdict())
 
     cl = Clusters(nodes)
@@ -458,7 +462,7 @@ def build_identity(cfg, cycles):
                 if a != b:
                     adj[a].append((1.0, "prior_confirmed", b))
 
-    grouped, cluster_flags = [], {}
+    rows = []
     method_counts = Counter()
     for r in roots:
         mem = cl.members[r]
@@ -519,14 +523,12 @@ def build_identity(cfg, cycles):
                 "other": (bo[0] if bo else ""),
                 "other_id": (tid_of[cl.find(bo[2])] if bo else ""),
             }
-        cluster_flags[r] = flags
         tid = tid_of[r]
-        crow = []
         for k in sorted(mem, key=lambda x: (x[0] != "E", x[1])):
             nd, d = nodes[k], details[k]
             carry = nd.prior_tid == tid
             manual = carry and nd.prior_proposed and nd.prior_proposed != tid
-            crow.append(
+            rows.append(
                 {
                     "teacher_id": tid,
                     "proposed_id": nd.prior_proposed if manual else tid,
@@ -544,11 +546,8 @@ def build_identity(cfg, cycles):
                     "notes": nd.prior_notes if carry else "",
                 }
             )
-        grouped.append(crow)
-    rows = [x for crow in grouped for x in crow]
-    for (
-        r
-    ) in stale_rows:  # accepted rows whose identifier is absent from this run's files
+    # accepted rows whose identifier is absent from this run's files
+    for r in stale_rows:
         rows.append(
             {
                 "teacher_id": r["teacher_id"],
@@ -577,10 +576,10 @@ def build_identity(cfg, cycles):
         "people": len(roots),
         "same_row_links": len(same_row),
         "blocked": dict(blocked),
-        "flags": Counter(f for fl in cluster_flags.values() for f in fl),
+        "flags": Counter(),  # filled in by run() once PLACED_OFF_LIST is known
         "methods": method_counts,
         "prior_source": prior_src,
-        "stale_prior_rows": stale,
+        "stale_prior_rows": len(stale_rows),
         "new_ids": len(new_ids),
         "confirmed_rows": sum(r["confirmed"] == "y" for r in rows),
     }
@@ -708,17 +707,18 @@ def build_courses(cy, prior_alias, prior_cat):
         used_c.add(c)
 
     # 4. catalogue
-    courses = {}
-    for code, nm in pnames.items():
-        courses[code] = {
-            "trip_code": code,
-            "placement_name": nm,
+    def new_course(trip_code, placement_name="", join_method=""):
+        return {
+            "trip_code": trip_code,
+            "placement_name": placement_name,
             "offerings": [],
             "city": "",
             "country": "",
-            "join_method": "",
+            "join_method": join_method,
             "join_score": "",
         }
+
+    courses = {code: new_course(code, nm) for code, nm in pnames.items()}
     for rec in offer:
         o, cid, m, s, _ = rec
         if not cid:
@@ -726,15 +726,8 @@ def build_courses(cy, prior_alias, prior_cat):
             m = "not_in_placements" if m == "UNMATCHED" else m
             rec[1], rec[2] = cid, m
         if cid not in courses:  # did not run, or has a code but no placement row
-            courses[cid] = {
-                "trip_code": "" if cid.startswith("NR-") else cid,
-                "placement_name": "",
-                "offerings": [],
-                "city": "",
-                "country": "",
-                "join_method": m,
-                "join_score": "",
-            }
+            trip_code = "" if cid.startswith("NR-") else cid
+            courses[cid] = new_course(trip_code, join_method=m)
         c = courses[cid]
         c["offerings"].append(o.name)
         c["city"] = c["city"] or o.city
@@ -745,15 +738,7 @@ def build_courses(cy, prior_alias, prior_cat):
     missing_sg = []  # listed as Singapore courses but absent from the placement sheet
     for code in cy.expected_sg_codes or []:
         if norm_code(code) not in {norm_code(c) for c in courses}:
-            courses[code] = {
-                "trip_code": code,
-                "placement_name": "",
-                "offerings": [],
-                "city": "",
-                "country": "",
-                "join_method": "",
-                "join_score": "",
-            }
+            courses[code] = new_course(code)
             missing_sg.append(code)
 
     def ran_status(cid):
@@ -1055,11 +1040,7 @@ def flag_off_list(cycles, id_rows, alias_all):
     marks genuine office discretion, so it asks for a check, not a correction.
     """
     tid_of = {node_key(r["identifier"]): r["teacher_id"] for r in id_rows}
-    amap = {
-        (a["cycle"], a["source"], course_key(a["raw_string"])): a["course_id"]
-        for a in alias_all
-        if a["course_id"]
-    }
+    amap = {alias_key(a): a["course_id"] for a in alias_all if a["course_id"]}
     flagged = set()
     for cy in cycles:
         ranked, placed = defaultdict(set), defaultdict(set)
@@ -1122,7 +1103,7 @@ def sort_identity_rows(rows):
 def accept(cfg):
     problems = []
     frames = {}
-    for draft in (ID_DRAFT, ALIAS_DRAFT, CAT_DRAFT):
+    for draft, _ in KEY_FILES:
         p = out_path(cfg, draft)
         if not p.exists():
             problems.append(f"{draft} not found; run stage 1 first")
@@ -1178,13 +1159,11 @@ def accept(cfg):
                     f"{draft}: {len(empty)} rows have no course_id (fill in a course_id, "
                     f"or {NONE_COURSE} if the string is not a course)"
                 )
-            known = set(
-                frames.get(CAT_DRAFT, pd.DataFrame(columns=["course_id"]))["course_id"]
-            )
-            if CAT_DRAFT not in frames:
-                cp = out_path(cfg, CAT_DRAFT)
-                if cp.exists():
-                    known = set(pd.read_csv(cp, dtype=str).fillna("")["course_id"])
+            # the catalogue draft comes later in this loop, so read it directly
+            known = set()
+            cp = out_path(cfg, CAT_DRAFT)
+            if cp.exists():
+                known = set(pd.read_csv(cp, dtype=str).fillna("")["course_id"])
             unknown = df[
                 (df["course_id"].str.strip() != "")
                 & (df["course_id"] != NONE_COURSE)
@@ -1234,11 +1213,7 @@ def accept(cfg):
         for p in problems:
             print(f"  ! {p}")
         sys.exit(1)
-    for draft, final in (
-        (ID_DRAFT, ID_FINAL),
-        (ALIAS_DRAFT, ALIAS_FINAL),
-        (CAT_DRAFT, CAT_FINAL),
-    ):
+    for draft, final in KEY_FILES:
         backup(cfg, final)
         frames[draft].to_csv(out_path(cfg, draft), index=False)  # NEW ids written back
         shutil.copy2(out_path(cfg, draft), out_path(cfg, final))
@@ -1260,12 +1235,12 @@ def run(cfg, quiet=False):
     prior_cat_rows, _ = read_prior(cfg, CAT_FINAL, CAT_DRAFT, cat_key)
     prior_cat = {}
     if prior_cat_rows is not None:
-        for r in prior_cat_rows.itertuples():
-            prior_cat[(str(r.cycle), r.course_id)] = {
-                "course_type": r.course_type,
-                "confirmed": is_yes(r.confirmed),
-                "notes": r.notes,
-                "country": getattr(r, "country", ""),
+        for r in prior_cat_rows.to_dict("records"):
+            prior_cat[cat_key(r)] = {
+                "course_type": r["course_type"],
+                "confirmed": is_yes(r["confirmed"]),
+                "notes": r["notes"],
+                "country": r.get("country", ""),
             }
 
     cat_all, alias_all, summaries, notes = [], [], {}, []
@@ -1288,17 +1263,14 @@ def run(cfg, quiet=False):
 
     def aprio(a):
         m = a["method"]
-        tier = (
-            3
-            if m == "prior_confirmed"
-            else (
-                0
-                if needs_review(m)
-                else 2
-                if m in ("exact_name", "exact_code", "not_in_placements")
-                else 1
-            )
-        )
+        if m == "prior_confirmed":
+            tier = 3
+        elif needs_review(m):
+            tier = 0
+        elif m in EXACT or m == "not_in_placements":
+            tier = 2
+        else:
+            tier = 1
         return (a["confirmed"] == "y", tier, a["cycle"], a["source"], a["raw_string"])
 
     alias_all.sort(key=aprio)
@@ -1311,8 +1283,8 @@ def run(cfg, quiet=False):
         )
     )
 
-    for rel in (ID_DRAFT, ALIAS_DRAFT, CAT_DRAFT):
-        backup(cfg, rel)
+    for draft, _ in KEY_FILES:
+        backup(cfg, draft)
     pd.DataFrame(id_rows).to_csv(out_path(cfg, ID_DRAFT), index=False)
     alias_cols = [
         "cycle",
@@ -1445,7 +1417,7 @@ def print_report(cycles, id_rep, id_rows, summaries, notes, alias_all, cat_all, 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--config", default="config/pseudonymize.yaml")
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument(
         "--accept",
         action="store_true",

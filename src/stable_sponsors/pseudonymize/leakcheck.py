@@ -1,7 +1,8 @@
 """Find personal identifiers that survived into derived/.
 
-Used by tests/test_leakage.py and by the synthetic end-to-end test. Returns
-findings instead of printing them, because the findings themselves are names.
+Used by tests/pseudonymize/test_leakage.py and by the synthetic end-to-end
+test. Returns findings instead of printing them, because the findings
+themselves are names.
 """
 
 from __future__ import annotations
@@ -33,16 +34,19 @@ def text_words(blob: str) -> set[str]:
     return set(re.findall(r"[a-z]+", HEX_RUN.sub(" ", blob.lower())))
 
 
-def identifier_tokens(cfg) -> set[str]:
+def identity_tokens_and_domains(cfg) -> tuple[set[str], set[str]]:
+    """Name/email-local tokens and email domains from key/identity.csv, in one read."""
     cw = pd.read_csv(out_path(cfg, "key/identity.csv"), dtype=str).fillna("")
-    toks = set()
+    toks, domains = set(), set()
     for kind, ident in zip(cw["kind"], cw["identifier"]):
         if kind == "email":
             local = ident.lower().split("@")[0]
             toks |= {t for t in re.split(r"[^a-z]+", local) if len(t) >= MIN_TOKEN}
+            if d := email_domain(ident):
+                domains.add(d)
         else:
             toks |= {t for t in norm_name(ident).split() if len(t) >= MIN_TOKEN}
-    return toks
+    return toks, domains
 
 
 def allowlist(cfg) -> set[str]:
@@ -60,13 +64,8 @@ def find_leaks(cfg) -> dict:
     derived = out_path(cfg, "derived")
     files = sorted(p for p in derived.glob("*") if p.is_file())
     blob = "\n".join(p.read_text(errors="replace").lower() for p in files)
-    domains = set()
-    cw = pd.read_csv(out_path(cfg, "key/identity.csv"), dtype=str).fillna("")
-    for kind, ident in zip(cw["kind"], cw["identifier"]):
-        if kind == "email" and email_domain(ident):
-            domains.add(email_domain(ident))
-    ok = allowlist(cfg)
-    toks = identifier_tokens(cfg) - ok
+    toks, domains = identity_tokens_and_domains(cfg)
+    toks -= allowlist(cfg)
     words = text_words(blob)
     return {
         "files": [p.name for p in files],

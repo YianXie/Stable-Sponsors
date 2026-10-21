@@ -7,37 +7,38 @@ the repo. Look up names and course titles there using your crosswalk key.
 """
 
 import csv
+from collections import defaultdict
 
 from stable_sponsors.compare import violations
-from stable_sponsors.data import load_cycle, load_observed_placements
-from stable_sponsors.pseudonymize.idmap import load_config, out_path
+from stable_sponsors.data import load_observed_placements
+from stable_sponsors.model import load_cycle_from_config
+from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 
 CYCLE = 2027
 
 
 def main() -> None:
-    cfg = load_config("config/pseudonymize.yaml")
-    derived, params = out_path(cfg, "derived"), out_path(cfg, "params")
-    cycle = load_cycle(
-        derived, params, CYCLE, lineage_path=out_path(cfg, "key") / "course_lineage.csv"
+    cfg = load_config(DEFAULT_CONFIG)
+    cycle = load_cycle_from_config(cfg, CYCLE)
+    observed = load_observed_placements(
+        out_path(cfg, "derived") / "placements.csv", cycle
     )
-    observed = load_observed_placements(derived / "placements.csv", cycle)
     v = violations(cycle, observed)
 
     obs = {p.teacher_id: p.course_id for p in observed}
     teachers = {t.teacher_id: t for t in cycle.teachers}
     prefs: dict[str, list[str]] = {}
+    ranked: dict[str, set[str]] = defaultdict(set)
     for p in sorted(cycle.preferences, key=lambda p: (p.round_id, p.rank)):
         prefs.setdefault(p.teacher_id, []).append(
             f"{p.round_id}#{p.rank}:{p.course_id}"
         )
+        ranked[p.teacher_id].add(p.course_id)
 
     cases = [(tid, "0 incumbency") for tid in v["0 incumbency"]]
     cases += [(tid, "4 only_ranked") for tid in v["4 only_ranked"]]
 
     # Swap partners: another case who holds a course this teacher ranked, and vice versa.
-    ranked = {tid: {s.split(":", 1)[1] for s in prefs.get(tid, [])} for tid, _ in cases}
-
     def partners(tid):
         return [
             j

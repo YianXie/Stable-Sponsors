@@ -1,6 +1,6 @@
 """Count model allocations that are determined and match the office's allocation.
 
-Reads one run report written by ``model --optimize`` (``private_root/runs/*_feasibility.json``)
+Reads one run report written by ``model --optimize`` (``private_root/runs/*_model_run.json``)
 and compares it with the office's observed placements in ``derived/placements.csv``.
 
 For every teacher in the run, two questions:
@@ -24,17 +24,16 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
-
-from stable_sponsors.pseudonymize.idmap import load_config, out_path
+from stable_sponsors.data import read_csv
+from stable_sponsors.model import DETERMINACY_KEY, OPTIMAL_KEY, RUN_SUFFIX
+from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 
 Assignment = dict[str, str | None]  # teacher_id -> course_id, None = unplaced
 
 
 def load_office(placements_csv: Path, cycle: int) -> Assignment:
     """Office placements for one cycle: teacher_id -> course_id (assigned rows only)."""
-    df = pd.read_csv(placements_csv, dtype=str, skipinitialspace=True)
-    df = df.apply(lambda c: c.str.strip())
+    df = read_csv(placements_csv)
     df = df[(df["cycle"] == str(cycle)) & (df["status"] == "assigned")]
     dup = df["teacher_id"][df["teacher_id"].duplicated()]
     if len(dup):
@@ -96,15 +95,15 @@ def score(model: Assignment, determined: dict[str, bool], office: Assignment) ->
 
 
 def latest_run(runs: Path) -> Path:
-    for p in sorted(runs.glob("*_feasibility.json"), reverse=True):
-        if "determinacy" in json.loads(p.read_text()):
+    for p in sorted(runs.glob(f"*{RUN_SUFFIX}.json"), reverse=True):
+        if DETERMINACY_KEY in json.loads(p.read_text()):
             return p
     raise SystemExit(f"no run with determinacy in {runs}; run `model --optimize` first")
 
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--config", default="config/pseudonymize.yaml")
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument(
         "--run", type=Path, help="run JSON (default: latest one with determinacy)"
     )
@@ -115,7 +114,10 @@ def main(argv: list[str] | None = None) -> None:
     runs, derived = out_path(config, "runs"), out_path(config, "derived")
     run_path = args.run or latest_run(runs)
     run = json.loads(run_path.read_text())
-    if "determinacy" not in run or run.get("optimal", {}).get("status") != "optimal":
+    if (
+        DETERMINACY_KEY not in run
+        or run.get(OPTIMAL_KEY, {}).get("status") != "optimal"
+    ):
         raise SystemExit(
             f"{run_path.name}: no proven optimum + determinacy; use an --optimize run"
         )
@@ -128,7 +130,7 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     office = load_office(placements, run["cycle"])
-    s = score(run["optimal"]["assignment"], run["determinacy"], office)
+    s = score(run[OPTIMAL_KEY]["assignment"], run[DETERMINACY_KEY], office)
     c = s["cells"]
 
     print(
@@ -172,7 +174,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"\noffice_not_in_run: {' '.join(s['office_not_in_run'])}")
 
     out = run_path.with_name(
-        run_path.stem.replace("_feasibility", "") + "_reproduction.json"
+        run_path.stem.removesuffix(RUN_SUFFIX) + "_reproduction.json"
     )
     out.write_text(json.dumps({"run": run_path.name, **s}, indent=2))
     print(f"\nwrote {out.name}")

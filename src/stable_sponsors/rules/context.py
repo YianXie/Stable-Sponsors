@@ -7,14 +7,13 @@ from stable_sponsors.data import Cycle
 
 @dataclass
 class Ctx:
-    """Course context for the optimization problem
+    """Model context that the rule encoders add constraints and objective terms to.
 
     Attributes:
         model (cp_model.CpModel): The CP model for the optimization problem.
-        cycle (Cycle): The cycle that the course ran.
-        course_params (dict[str, CourseParams]): The parameters for each course.
-        x (dict[tuple[str, str], cp_model.IntVar]): A dictionary mapping teacher-course pairs to boolean variables.
-        y (dict[str, cp_model.IntVar]): A dictionary mapping courses to boolean variables.
+        cycle (Cycle): The cycle being allocated.
+        x (dict[tuple[str, str], cp_model.IntVar]): A dictionary mapping teacher-course pairs to boolean variables (teacher assigned to course).
+        y (dict[str, cp_model.IntVar]): A dictionary mapping courses to boolean variables (course runs).
         objective (list): A list of terms to be added to the objective function.
     """
 
@@ -26,13 +25,13 @@ class Ctx:
 
 
 def build_ctx(cycle: Cycle) -> Ctx:
-    """Build course context
+    """Build the model context for a cycle
 
     Args:
-        cycle (Cycle): the cycle that the course ran
+        cycle (Cycle): the cycle being allocated
 
     Returns:
-        Ctx: the course context
+        Ctx: the model context
     """
 
     model = cp_model.CpModel()

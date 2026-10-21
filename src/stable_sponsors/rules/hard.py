@@ -15,16 +15,17 @@ def incumbency_preassignment(ctx: Ctx, params: dict) -> None:
         ValueError: If a repeater's incumbent course is not in the current cycle. Repeaters whose prior course was discontinued (incumbent_course_id is None) are skipped.
     """
 
+    course_ids = {c.course_id for c in ctx.cycle.courses}
     for teacher in ctx.cycle.teachers:
-        if teacher.is_repeater:
-            course_id = teacher.incumbent_course_id
-            if course_id is None:
-                continue  # prior course discontinued (lineage): nothing to repeat into
-            if course_id not in [c.course_id for c in ctx.cycle.courses]:
-                raise ValueError(
-                    f"Repeater teacher {teacher.teacher_id} has prior course ID {course_id} which is not in the current cycle's courses."
-                )
-            ctx.model.add(ctx.x[(teacher.teacher_id, course_id)] == 1)
+        course_id = teacher.incumbent_course_id
+        # course_id is None: prior course discontinued (lineage), nothing to repeat into
+        if not teacher.is_repeater or course_id is None:
+            continue
+        if course_id not in course_ids:
+            raise ValueError(
+                f"Repeater teacher {teacher.teacher_id} has prior course ID {course_id} which is not in the current cycle's courses."
+            )
+        ctx.model.add(ctx.x[(teacher.teacher_id, course_id)] == 1)
 
 
 @register(3)
@@ -38,10 +39,7 @@ def qualification_required(ctx: Ctx, params: dict) -> None:
 
     for teacher in ctx.cycle.teachers:
         for course in ctx.cycle.courses:
-            if not all(
-                requirements in teacher.qualifications
-                for requirements in course.requires
-            ):
+            if not set(course.requires) <= set(teacher.qualifications):
                 ctx.model.add(ctx.x[(teacher.teacher_id, course.course_id)] == 0)
 
 
@@ -72,41 +70,41 @@ def only_ranked_courses(ctx: Ctx, params: dict) -> None:
 
 @register(5)
 def slot_gender(ctx: Ctx, params: dict) -> None:
-    """Ensure that teachers are only assigned to courses that match their gender.
+    """Ensure that each running course gets at least its male and female slots filled by teachers of that gender.
 
     Args:
         ctx (Ctx): The context
         params (dict): The parameters for the course, from the yaml config file
 
     Raises:
-        ValueError: If a teacher has no gender specified or a course has no female slots specified.
+        ValueError: If a teacher has no gender specified or a course has no male or female slots specified.
     """
 
     for teacher in ctx.cycle.teachers:
         if teacher.gender is None:
             raise ValueError(f"Teacher {teacher.teacher_id} has no gender specified")
 
-    # Ensure that each course has exactly `female_slots` female sponsors.
+    # A running course has at least `female_slots` female and `male_slots` male sponsors.
     for course in ctx.cycle.courses:
         if course.male_slots is None or course.female_slots is None:
             raise ValueError(
                 f"Course {course.course_id} must have both male and female slots specified."
             )
         cid = course.course_id
-        women = sum(
-            ctx.x[(t.teacher_id, cid)]
-            for t in ctx.cycle.teachers
-            if t.gender == "female"
-        )
-        men = sum(
-            ctx.x[(t.teacher_id, cid)] for t in ctx.cycle.teachers if t.gender == "male"
-        )
-        ctx.model.add(women >= course.female_slots * ctx.y[cid])
-        ctx.model.add(men >= course.male_slots * ctx.y[cid])
+        for gender, slots in (
+            ("female", course.female_slots),
+            ("male", course.male_slots),
+        ):
+            sponsors = sum(
+                ctx.x[(t.teacher_id, cid)]
+                for t in ctx.cycle.teachers
+                if t.gender == gender
+            )
+            ctx.model.add(sponsors >= slots * ctx.y[cid])
 
 
 @register(8)
-def one_course_per_teacher(ctx, params):
+def one_course_per_teacher(ctx: Ctx, params: dict) -> None:
     """Ensure that each teacher is assigned to at most one course.
 
     Args:
@@ -137,23 +135,15 @@ def course_capacity(ctx: Ctx, params: dict) -> None:
     """
 
     for course in ctx.cycle.courses:
-        min_capacity = course.min_sponsors
-        max_capacity = course.max_sponsors
-
-        if min_capacity is None or max_capacity is None:
+        if course.min_sponsors is None or course.max_sponsors is None:
             raise ValueError(
                 f"Course {course.course_id} must have both min and max capacity specified."
             )
 
-        # Ensure that the number of sponsors for each course is within the specified bounds.
-        ctx.model.add(
-            sum(ctx.x[(t.teacher_id, course.course_id)] for t in ctx.cycle.teachers)
-            >= min_capacity * ctx.y[course.course_id]
-        )
-        ctx.model.add(
-            sum(ctx.x[(t.teacher_id, course.course_id)] for t in ctx.cycle.teachers)
-            <= max_capacity * ctx.y[course.course_id]
-        )
+        cid = course.course_id
+        sponsors = sum(ctx.x[(t.teacher_id, cid)] for t in ctx.cycle.teachers)
+        ctx.model.add(sponsors >= course.min_sponsors * ctx.y[cid])
+        ctx.model.add(sponsors <= course.max_sponsors * ctx.y[cid])
 
 
 @register(10)

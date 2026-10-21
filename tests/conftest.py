@@ -8,11 +8,12 @@ from stable_sponsors.rules.context import Ctx, build_ctx
 TESTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TESTS_DIR.parent
 TOY_DIR = TESTS_DIR / "fixtures" / "toy_cycle"
+RULES_PATH = REPO_ROOT / "config" / "rules-2027.yaml"
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def toy_cycle() -> Cycle:
-    """Load the toy cycle
+    """Load the toy cycle once; Cycle is frozen, so tests share it safely.
 
     Returns:
         Cycle: The loaded toy cycle.

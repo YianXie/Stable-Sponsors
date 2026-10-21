@@ -1,39 +1,41 @@
+import shutil
 from pathlib import Path
 
-from stable_sponsors.data import load_cycle, load_observed_placements
+import pytest
+
+from stable_sponsors.compare import violations
+from stable_sponsors.data import ObservedPlacement, load_cycle, load_observed_placements
+from stable_sponsors.rules.context import Ctx, build_ctx
+from stable_sponsors.rules.hard import incumbency_preassignment
+from tests.conftest import TOY_DIR
+
+HEADER = "prior_cycle,prior_course_id,cycle,course_id,basis,status,note\n"
 
 
-def test_load_cycle() -> None:
-    base = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "toy_cycle"
+def test_load_cycle(toy_cycle) -> None:
+    assert len(toy_cycle.teachers) == 5
+    assert len(toy_cycle.courses) == 4
 
-    cycle = load_cycle(base)
-    assert len(cycle.teachers) == 5
-    assert len(cycle.courses) == 4
-
-    placements = load_observed_placements(base / "placements.csv", cycle)
+    placements = load_observed_placements(TOY_DIR / "placements.csv", toy_cycle)
     assert len(placements) == 5
 
 
 # --- cross-year course identity -------------------------------------------
 
-import shutil
-
-import pytest
-
-from stable_sponsors.compare import violations
-from stable_sponsors.data import ObservedPlacement
-from stable_sponsors.rules.context import build_ctx
-from stable_sponsors.rules.hard import incumbency_preassignment
-
-TOY = Path(__file__).resolve().parent / "fixtures" / "toy_cycle"
-HEADER = "prior_cycle,prior_course_id,cycle,course_id,basis,status,note\n"
-
 
 def _toy_with_lineage(tmp_path: Path, rows: str) -> Path:
-    for f in TOY.glob("*.csv"):
+    for f in TOY_DIR.glob("*.csv"):
         shutil.copy(f, tmp_path)
     (tmp_path / "course_lineage.csv").write_text(HEADER + rows)
     return tmp_path
+
+
+def _pinned(ctx: Ctx) -> set[str]:
+    """Names of the variables the model's constraints were added on."""
+    return {
+        ctx.model.proto.variables[c.linear.vars[0]].name
+        for c in ctx.model.proto.constraints
+    }
 
 
 def test_prior_code_is_translated_not_reused(tmp_path):
@@ -50,10 +52,7 @@ def test_prior_code_is_translated_not_reused(tmp_path):
 
     ctx = build_ctx(cyc)
     incumbency_preassignment(ctx, {})
-    pinned = {
-        ctx.model.proto.variables[c.linear.vars[0]].name
-        for c in ctx.model.proto.constraints
-    }
+    pinned = _pinned(ctx)
     assert "x_T1000_INTL-2" in pinned
     assert "x_T1000_INTL-1" not in pinned
 
@@ -94,11 +93,7 @@ def test_discontinued_course_means_no_incumbency(tmp_path):
 
     ctx = build_ctx(cyc)
     incumbency_preassignment(ctx, {})
-    names = {
-        ctx.model.proto.variables[c.linear.vars[0]].name
-        for c in ctx.model.proto.constraints
-    }
-    assert not any(n.startswith("x_T1000_") for n in names)
+    assert not any(n.startswith("x_T1000_") for n in _pinned(ctx))
 
     # ...and placing them anywhere is not an incumbency violation
     obs = (
@@ -112,16 +107,15 @@ def test_discontinued_course_means_no_incumbency(tmp_path):
 # --- observed placements ---------------------------------------------------
 
 
-def test_observed_placements_keep_assigned_rows_of_this_cycle(tmp_path):
+def test_observed_placements_keep_assigned_rows_of_this_cycle(tmp_path, toy_cycle):
     """derived/placements.csv also holds empty sponsor slots (no teacher) and
     other cycles' rows. Those are not placements in this cycle."""
-    cycle = load_cycle(TOY)
     p = tmp_path / "placements.csv"
     p.write_text(
-        (TOY / "placements.csv").read_text().rstrip("\n")
+        (TOY_DIR / "placements.csv").read_text().rstrip("\n")
         + "\n2027, INTL-1, 3, , blank_in_source"
         + "\n2027, INTL-2, 3, , blank_in_source"
         + "\n2026, INTL-1, 1, T1001, assigned\n"
     )
-    placements = load_observed_placements(p, cycle)
-    assert placements == load_observed_placements(TOY / "placements.csv", cycle)
+    placements = load_observed_placements(p, toy_cycle)
+    assert placements == load_observed_placements(TOY_DIR / "placements.csv", toy_cycle)

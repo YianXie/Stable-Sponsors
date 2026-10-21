@@ -1,10 +1,10 @@
 from dataclasses import replace
 
 from stable_sponsors.model import check_feasibility, diagnose, load_hard_rules
-from tests.conftest import REPO_ROOT
+from tests.conftest import RULES_PATH
 
-# Hard rules only: priority/tiebreak encoders are still NotImplementedError stubs.
-RULES = load_hard_rules(REPO_ROOT / "config" / "rules-2027.yaml")
+# Hard rules only: feasibility is a property of the constraints, not the objective.
+RULES = load_hard_rules(RULES_PATH)
 
 
 def test_toy_is_feasible(toy_cycle):

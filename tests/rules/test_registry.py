@@ -1,12 +1,10 @@
-from pathlib import Path
-
 import pytest
 import yaml
 
 from stable_sponsors.rules import hard, priority, tiebreak  # noqa: F401
 from stable_sponsors.rules.registry import ENCODERS
+from tests.conftest import RULES_PATH
 
-RULES_PATH = Path(__file__).resolve().parents[2] / "config" / "rules-2027.yaml"
 RULES = yaml.safe_load(RULES_PATH.read_text())["rules"]
 ALL = {r["id"]: r for r in RULES}
 ACTIVE = {r["id"] for r in RULES if r["status"] != "deferred"}

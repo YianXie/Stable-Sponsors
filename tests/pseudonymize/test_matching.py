@@ -1,17 +1,14 @@
 """Unit tests for the matching rules. No private data needed."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
 from stable_sponsors.pseudonymize.idmap import (
     CourseIndex,
+    course_key,
     match_score,
     name_similarity,
     norm_course,
     norm_email,
     norm_name,
+    split_slot_tag,
     tokens_covered,
 )
 
@@ -44,9 +41,8 @@ def test_name_similarity_is_conservative():
     assert name_similarity("marty williams", "martin williams") >= 0.75  # nickname
     assert name_similarity("dan kim", "daniel kim") >= 0.75  # prefix
     assert name_similarity("grace l tan", "grace tan") >= 0.75  # middle initial
-    assert (
-        name_similarity("maria garcia lopez", "maria garcia") >= 0.75
-    )  # double surname
+    # double surname
+    assert name_similarity("maria garcia lopez", "maria garcia") >= 0.75
     assert name_similarity("williams martin", "martin williams") >= 0.75  # order
     assert name_similarity("daniel kim", "david kim") < 0.75  # same initial only
     assert name_similarity("mary williams", "martin williams") < 0.75
@@ -90,8 +86,6 @@ def test_norm_course_ampersand():
 
 
 def test_slot_tags():
-    from stable_sponsors.pseudonymize.idmap import course_key, split_slot_tag
-
     assert split_slot_tag("Nepal Trek (MALE)") == ("Nepal Trek", "male")
     assert split_slot_tag("Nepal Trek [Female] ") == ("Nepal Trek", "female")
     assert split_slot_tag("Maldives - Male") == ("Maldives - Male", "")

@@ -6,23 +6,16 @@ the ground truth, then confirms everything, runs stage 2, and checks the
 derived tables, the consistency checks, stability on rerun, and leakage.
 """
 
-import sys
 from collections import defaultdict
-from pathlib import Path
 
 import pandas as pd
 import pytest
 import yaml
-
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "tools"))
-
 from make_synthetic import generate
 
 import stable_sponsors.pseudonymize.apply_pseudonymization as s2
 import stable_sponsors.pseudonymize.build_crosswalk as s1
-from stable_sponsors.pseudonymize.idmap import load_config, norm_course
+from stable_sponsors.pseudonymize.idmap import REPO_ROOT, load_config, norm_course
 from stable_sponsors.pseudonymize.leakcheck import find_leaks
 
 
@@ -30,7 +23,7 @@ from stable_sponsors.pseudonymize.leakcheck import find_leaks
 def world(tmp_path_factory):
     root = tmp_path_factory.mktemp("synthetic")
     truth = generate(root, seed=7)
-    cfg_d = yaml.safe_load((ROOT / "config/pseudonymize.example.yaml").read_text())
+    cfg_d = yaml.safe_load((REPO_ROOT / "config/pseudonymize.example.yaml").read_text())
     cfg_d["private_root"] = str(root)
     cp = root / "config.yaml"
     cp.write_text(yaml.safe_dump(cfg_d))
@@ -41,6 +34,11 @@ def world(tmp_path_factory):
 
 def _csv(root, rel):
     return pd.read_csv(root / rel, dtype=str).fillna("")
+
+
+def _course_truth_key(r):
+    """A catalogue row's key in truth: its trip code, or NR:<name> if it did not run."""
+    return r.trip_code or "NR:" + norm_course(r.offerings_name)
 
 
 def _truth_keys(truth):
@@ -131,10 +129,7 @@ def test_hard_identity_cases(world):
 def test_course_links_match_truth(world):
     root, truth = world["root"], world["truth"]
     al, cat = _csv(root, s1.ALIAS_DRAFT), _csv(root, s1.CAT_DRAFT)
-    tkey = {
-        (r.cycle, r.course_id): (r.trip_code or "NR:" + norm_course(r.offerings_name))
-        for r in cat.itertuples()
-    }
+    tkey = {(r.cycle, r.course_id): _course_truth_key(r) for r in cat.itertuples()}
     errs = []
     for r in al.itertuples():
         want = truth["aliases"][r.cycle][r.source].get(r.raw_string)
@@ -149,7 +144,7 @@ def test_catalogue_types_and_ran_match_truth(world):
     cat = _csv(root, s1.CAT_DRAFT)
     seen, errs = defaultdict(set), []
     for r in cat.itertuples():
-        k = r.trip_code or "NR:" + norm_course(r.offerings_name)
+        k = _course_truth_key(r)
         want = truth["courses"][r.cycle].get(k)
         seen[r.cycle].add(k)
         ran = {"y": True, "n": False, "unknown": None}[r.ran]
@@ -217,10 +212,7 @@ def test_preferences_match_truth(world, built):
     root, truth = world["root"], world["truth"]
     t2p = _tid_to_pid(world, s1.ID_FINAL)
     cat = _csv(root, s1.CAT_FINAL)
-    tkey = {
-        (r.cycle, r.course_id): (r.trip_code or "NR:" + norm_course(r.offerings_name))
-        for r in cat.itertuples()
-    }
+    tkey = {(r.cycle, r.course_id): _course_truth_key(r) for r in cat.itertuples()}
     pr = _csv(root, "derived/preferences.csv")
     got = {
         (r.cycle, r.round, t2p[r.teacher_id], int(r.rank), tkey[(r.cycle, r.course_id)])

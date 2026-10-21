@@ -4,7 +4,7 @@ import pytest
 from ortools.sat.python import cp_model
 
 from stable_sponsors.data import Cycle, Preference, load_observed_placements
-from stable_sponsors.model import load_hard_rules
+from stable_sponsors.model import SOLVED, build_model, load_hard_rules
 from stable_sponsors.rules.context import Ctx, build_ctx
 from stable_sponsors.rules.hard import (
     course_capacity,
@@ -14,10 +14,7 @@ from stable_sponsors.rules.hard import (
     qualification_required,
     slot_gender,
 )
-from stable_sponsors.rules.registry import ENCODERS
-from tests.conftest import REPO_ROOT, TOY_DIR
-
-FEASIBLE = {cp_model.OPTIMAL, cp_model.FEASIBLE}
+from tests.conftest import RULES_PATH, TOY_DIR
 
 
 def solve(ctx: Ctx) -> cp_model.CpSolverStatus:
@@ -78,7 +75,7 @@ def test_non_repeater_can_take_open_slot(ctx: Ctx) -> None:
     incumbency_preassignment(ctx, {})
     force(ctx, ("T1001",), "INTL-1")
     status = solve(ctx)
-    assert status in FEASIBLE
+    assert status in SOLVED
 
 
 def test_non_repeater_is_not_forced_anywhere(ctx: Ctx) -> None:
@@ -90,7 +87,7 @@ def test_non_repeater_is_not_forced_anywhere(ctx: Ctx) -> None:
     incumbency_preassignment(ctx, {})
     for c in ctx.cycle.courses:
         ctx.model.add(ctx.x[("T1001", c.course_id)] == 0)
-    assert solve(ctx) in FEASIBLE
+    assert solve(ctx) in SOLVED
 
 
 def test_no_repeaters_adds_no_constraints(toy_cycle: Cycle) -> None:
@@ -137,7 +134,7 @@ def test_qualified_teacher_can_choose_other_courses(ctx: Ctx) -> None:
     qualification_required(ctx, {})
     force(ctx, ("T1000",), "INTL-2")
     status = solve(ctx)
-    assert status in FEASIBLE
+    assert status in SOLVED
 
 
 def test_qualified_teacher_can_take_restricted_course(ctx: Ctx):
@@ -149,7 +146,7 @@ def test_qualified_teacher_can_take_restricted_course(ctx: Ctx):
 
     qualification_required(ctx, {})
     force(ctx, ("T1000",), "INTL-1")  # T1000 has scuba
-    assert solve(ctx) in FEASIBLE
+    assert solve(ctx) in SOLVED
 
 
 def test_all_requirements_needed_not_any(toy_cycle: Cycle):
@@ -178,7 +175,7 @@ def test_unrestricted_course_open_to_unqualified(ctx: Ctx):
 
     qualification_required(ctx, {})
     force(ctx, ("T1001",), "INTL-2")  # T1001 has no qualifications
-    assert solve(ctx) in FEASIBLE
+    assert solve(ctx) in SOLVED
 
 
 def test_exactly_one_block_per_unqualified_pair(ctx: Ctx):
@@ -219,7 +216,7 @@ def test_ranked_course_is_feasible(ctx: Ctx) -> None:
     only_ranked_courses(ctx, {})
     force(ctx, ("T1001",), "INTL-1")  # T1001 has ranked INTL-1
     status = solve(ctx)
-    assert status in FEASIBLE
+    assert status in SOLVED
 
 
 def test_repeater_can_take_unranked_prior_course(toy_cycle):
@@ -236,7 +233,7 @@ def test_repeater_can_take_unranked_prior_course(toy_cycle):
     ctx = build_ctx(cyc)
     incumbency_preassignment(ctx, {})
     only_ranked_courses(ctx, {})
-    assert solve(ctx) in FEASIBLE
+    assert solve(ctx) in SOLVED
 
 
 ### Slot gender tests
@@ -251,9 +248,8 @@ def test_female_slot_mismatch_is_infeasible(ctx: Ctx) -> None:
 
     course_capacity(ctx, {})
     slot_gender(ctx, {})
-    force(
-        ctx, ("T1000", "T1002"), "INTL-2"
-    )  # T1000 and T1002 are male; INTL-2 needs 1 female
+    # T1000 and T1002 are male; INTL-2 needs 1 female
+    force(ctx, ("T1000", "T1002"), "INTL-2")
     status = solve(ctx)
     assert status == cp_model.INFEASIBLE
 
@@ -268,7 +264,7 @@ def test_female_slot_match_is_feasible(ctx: Ctx) -> None:
     slot_gender(ctx, {})
     force(ctx, ("T1003",), "INTL-2")  # T1003 is female; INTL-2 needs 1 female
     status = solve(ctx)
-    assert status in FEASIBLE
+    assert status in SOLVED
 
 
 def test_missing_teacher_gender_raises(ctx: Ctx) -> None:
@@ -336,7 +332,7 @@ def test_one_course_per_teacher_is_feasible(ctx: Ctx) -> None:
     one_course_per_teacher(ctx, {})
     force(ctx, ("T1000",), "INTL-1")
     status = solve(ctx)
-    assert status in FEASIBLE
+    assert status in SOLVED
 
 
 ### Course capacity tests
@@ -351,7 +347,7 @@ def test_over_max_is_infeasible(ctx):
 def test_within_bounds_is_feasible(ctx):
     course_capacity(ctx, {})
     force(ctx, ("T1000", "T1001"), "INTL-1")  # 2 <= max 2
-    assert solve(ctx) in FEASIBLE
+    assert solve(ctx) in SOLVED
 
 
 def test_running_course_below_min_is_infeasible(ctx):
@@ -381,15 +377,8 @@ def test_missing_bounds_raises(ctx):
 ### Observed placement tests
 
 
-RULES_PATH = REPO_ROOT / "config" / "rules-2027.yaml"
-
-
 def test_observed_toy_placement_satisfies_all_hard_rules(toy_cycle: Cycle) -> None:
-    ctx = build_ctx(toy_cycle)
-    rules = load_hard_rules(RULES_PATH)
-    for r in rules:
-        if r["status"] != "deferred":
-            ENCODERS[r["id"]](ctx, r["params"])
+    ctx = build_model(toy_cycle, load_hard_rules(RULES_PATH))
     for p in load_observed_placements(TOY_DIR / "placements.csv", toy_cycle):
         ctx.model.add(ctx.x[(p.teacher_id, p.course_id)] == 1)
-    assert solve(ctx) in FEASIBLE
+    assert solve(ctx) in SOLVED

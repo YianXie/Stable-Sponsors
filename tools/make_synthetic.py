@@ -363,9 +363,8 @@ def generate(out: Path, seed: int = 7) -> dict:
         "sam": add_person("Sam", "Lee"),  # slee@  } both new in 2027:
         "samantha": add_person("Samantha", "Lee"),  # slee2@ } genuinely ambiguous
         "qiang": add_person("Qiang", "Zhou"),  # submits round 1, is not placed
-        "quinn": add_person(
-            "Quinn", "Zhou"
-        ),  # placed without responding (qzhou2@ unseen)
+        # placed without responding (qzhou2@ unseen)
+        "quinn": add_person("Quinn", "Zhou"),
     }
     people[sp["martin"]]["variants"] = {"form2026": "Marty Williams"}
     people[sp["grace"]]["variants"] = {
@@ -454,30 +453,25 @@ def generate(out: Path, seed: int = 7) -> dict:
         offer = offered[cyc]
         SG = SG_ALL if cyc == "2026" else SG_ALL[:11]
         members = roster[cyc]
-        code_of = {c["name"]: c["code"] for c in offer}
 
         # repeaters (known only in 2027)
         rep = {}
         if cyc == "2027":
-            cands = [
-                p
-                for p in cont
-                if p in placed_prev and placed_prev[p][0] in code_of.values()
-            ]
+            offered_codes = {c["code"] for c in offer}
+            cands = [p for p in cont if placed_prev.get(p) in offered_codes]
             rng.shuffle(cands)
-            rep = {p: placed_prev[p][0] for p in cands[:35]}
+            rep = {p: placed_prev[p] for p in cands[:35]}
             # one repeated course is renumbered in 2027
-            ren_code = min(set(rep.values()))
-            renumbered = ren_code
-            new_code = ren_code.split("-")[0] + "-X" + ren_code.split("-")[1][:2]
+            renumbered = min(rep.values())
+            new_code = renumbered.split("-")[0] + "-X" + renumbered.split("-")[1][:2]
             for c in offer:
-                if c["code"] == ren_code:
+                if c["code"] == renumbered:
                     c["code27"] = new_code
-            rep = {p: (new_code if c == ren_code else c) for p, c in rep.items()}
+            rep = {p: (new_code if c == renumbered else c) for p, c in rep.items()}
         else:
             pool = [p for p in members if p not in special_cont and p != sp["dana"]]
             rng.shuffle(pool)
-            rep = {p: None for p in [sp["dana"]] + pool[:29]}  # 2026 repeaters: no file
+            rep = dict.fromkeys([sp["dana"]] + pool[:29])  # 2026 repeaters: no file
 
         def code27(c, cyc=cyc):
             return c.get("code27", c["code"]) if cyc == "2027" else c["code"]
@@ -517,12 +511,13 @@ def generate(out: Path, seed: int = 7) -> dict:
                 pname[c["name"]] = f"{c['country']} Expedition {cyc}"
 
         # capacity
+        intl_codes = [code27(c) for c in ran]
         cap = {}
-        for c in ran:
-            cap[code27(c)] = 2
-        for s_name, s_code in SG:
+        for code in intl_codes:
+            cap[code] = 2
+        for _, s_code in SG:
             cap[s_code] = 2
-        extra3 = rng.sample([code27(c) for c in ran], 26)
+        extra3 = rng.sample(intl_codes, 26)
         for code in extra3:
             cap[code] = 3
         for code in rep_courses:
@@ -531,7 +526,6 @@ def generate(out: Path, seed: int = 7) -> dict:
         seats = {code: [] for code in cap}
         # place repeaters
         if cyc == "2026":
-            intl_codes = [code27(c) for c in ran]
             for p in rep:
                 opts = [c for c in intl_codes if len(seats[c]) < cap[c]]
                 seats[rng.choice(opts)].append(p)
@@ -545,13 +539,10 @@ def generate(out: Path, seed: int = 7) -> dict:
             for p in (sp["sam"], sp["samantha"], sp["david"], sp["quinn"])
             if p in nonrep
         ]
-        never_place = [
-            p for p in (sp["qiang"],) if p in nonrep
-        ]  # submits, is never placed
+        never_place = [p for p in (sp["qiang"],) if p in nonrep]  # submits, not placed
         nonrep = [p for p in nonrep if p not in must_place and p not in never_place]
-        nonrep = (
-            nonrep[:26] + must_place + nonrep[26:] + never_place
-        )  # never in sg_sub either
+        # never_place goes last, so it is never in sg_sub either
+        nonrep = nonrep[:26] + must_place + nonrep[26:] + never_place
         sg_sub = nonrep[:26]
         for p in sg_sub:
             opts = [code for _, code in SG if len(seats[code]) < cap[code]]
@@ -559,7 +550,6 @@ def generate(out: Path, seed: int = 7) -> dict:
                 seats[rng.choice(opts)].append(p)
         placed_now = {p for s in seats.values() for p in s}
         rest = [p for p in nonrep if p not in placed_now and p not in never_place]
-        intl_codes = [code27(c) for c in ran]
         it = iter(rest)
         for code in intl_codes:  # every running course gets two sponsors
             while len(seats[code]) < 2:
@@ -583,9 +573,8 @@ def generate(out: Path, seed: int = 7) -> dict:
 
         # ---------------------------------------------------- files
         d = raw / cyc
-        if (
-            cyc == "2026"
-        ):  # 2026 offerings carry a trip code, but only for courses that ran
+        # 2026 offerings carry a trip code, but only for courses that ran
+        if cyc == "2026":
             write_xlsx(
                 d / "00_course_offerings.xlsx",
                 ["Trip Code", "Course Name", "Arrival City", "Country"],
@@ -608,6 +597,7 @@ def generate(out: Path, seed: int = 7) -> dict:
 
         name_by_code = {code27(c): c["name"] for c in offer}
         sg_names = [n for n, _ in SG]
+        sg_code_of = dict(SG)
         sg_code_name = {code: n for n, code in SG}
         colleague = rng.choice(LAST)
         ft_opts = [
@@ -620,29 +610,24 @@ def generate(out: Path, seed: int = 7) -> dict:
             "Prefer late February dates.",
         ]
 
-        def intl_list(p, exclude=None, include=None, k=7, offer=offer):
+        def intl_list(exclude=None, include=None, k=7, offer=offer):
             pool = [c["name"] for c in offer if c["name"] != exclude]
             picks = rng.sample(pool, k)
             if include and include not in picks:
                 picks[rng.randrange(k)] = include
             return picks
 
-        r1_rows, r2_rows, sg_rows = [], [], []
-        alias_truth = {"offerings": {}, "intl": {}, "sg": {}, "prior": {}}
-        for c in offer:
-            alias_truth["offerings"][c["name"]] = (
+        # truth key per offerings name: the trip code, or NR:<name> if it did not run
+        tkey = {
+            c["name"]: (
                 code27(c)
                 if c["name"] not in not_run
                 else "NR:" + norm_course(c["name"])
             )
-
-        def tkey(course_name, offer=offer, not_run=not_run):
-            c = next(x for x in offer if x["name"] == course_name)
-            return (
-                code27(c)
-                if course_name not in not_run
-                else "NR:" + norm_course(course_name)
-            )
+            for c in offer
+        }
+        r1_rows, r2_rows, sg_rows = [], [], []
+        alias_truth = {"offerings": dict(tkey), "intl": {}, "sg": {}, "prior": {}}
 
         dup_done = na_done = False
         silent = {sp["quinn"]}
@@ -657,24 +642,23 @@ def generate(out: Path, seed: int = 7) -> dict:
             if cyc == "2026" and rng.random() < 0.1:
                 typed = typed.lower()
             if cyc == "2027" and p in r2_people:
-                picks = intl_list(p, exclude=placed_name)
+                picks = intl_list(exclude=placed_name)
             elif p == sp["qiang"]:
-                picks = intl_list(
-                    p, exclude=quinn_course
-                )  # so Quinn's course is off his list
+                # so Quinn's course is off his list
+                picks = intl_list(exclude=quinn_course)
             else:
-                picks = intl_list(p, include=placed_name)
+                picks = intl_list(include=placed_name)
             for s in picks:
-                alias_truth["intl"][s] = tkey(s)
+                alias_truth["intl"][s] = tkey[s]
 
-            def tag(picks, cyc=cyc, p=p, alias_truth=alias_truth):
+            def tag(picks, cyc=cyc, p=p, alias_truth=alias_truth, tkey=tkey):
                 """Some options carry the open slot's gender, e.g. 'Nepal Trek (MALE)'."""
                 out = []
                 for i, s in enumerate(picks, 1):
                     if s != "N/A" and rng.random() < 0.25:
                         g = gender[p]
                         out.append(f"{s} ({g.upper()})")
-                        alias_truth["intl"][out[-1]] = tkey(s)
+                        alias_truth["intl"][out[-1]] = tkey[s]
                         truth["slot_tags"].append([cyc, "intl_r1", p, i, g])
                     else:
                         out.append(s)
@@ -686,22 +670,22 @@ def generate(out: Path, seed: int = 7) -> dict:
                 row = [e, typed, shown_p[0] + " ", *ft, *shown_p[1:]]
                 r1_rows.append(row)
                 truth["prefs"] += [
-                    [cyc, "intl_r1", p, i, tkey(s)] for i, s in enumerate(picks, 1)
+                    [cyc, "intl_r1", p, i, tkey[s]] for i, s in enumerate(picks, 1)
                 ]
             else:
                 if not na_done:
                     picks = picks[:6] + ["N/A"]
                     na_done = True
                 if not dup_done:
-                    early = intl_list(p)
+                    early = intl_list()
                     r1_rows.append([e, early[0], "", "", "", *early[1:]])
                     for s in early:
-                        alias_truth["intl"][s] = tkey(s)
+                        alias_truth["intl"][s] = tkey[s]
                     dup_done = True
                 shown_p = tag(picks)
                 r1_rows.append([e, shown_p[0], *ft, *shown_p[1:]])
                 truth["prefs"] += [
-                    [cyc, "intl_r1", p, i, tkey(s)]
+                    [cyc, "intl_r1", p, i, tkey[s]]
                     for i, s in enumerate(picks, 1)
                     if s != "N/A"
                 ]
@@ -715,10 +699,10 @@ def generate(out: Path, seed: int = 7) -> dict:
                     r2.insert(rng.randrange(3), placed_name)
                     r2_rows.append([e, *r2])
                     truth["prefs"] += [
-                        [cyc, "intl_r2", p, i, tkey(s)] for i, s in enumerate(r2, 1)
+                        [cyc, "intl_r2", p, i, tkey[s]] for i, s in enumerate(r2, 1)
                     ]
                     for s in r2:
-                        alias_truth["intl"][s] = tkey(s)
+                        alias_truth["intl"][s] = tkey[s]
             if p in sg_sub:
                 inc = sg_code_name.get(placed_code)
                 sp_ = rng.sample(sg_names, 5)
@@ -731,9 +715,9 @@ def generate(out: Path, seed: int = 7) -> dict:
                     for s in sp_
                 ]
                 for s, s0 in zip(shown_sg, sp_):
-                    alias_truth["sg"][s] = dict(SG)[s0]
+                    alias_truth["sg"][s] = sg_code_of[s0]
                 truth["prefs"] += [
-                    [cyc, "sg", p, i, dict(SG)[s0]] for i, s0 in enumerate(sp_, 1)
+                    [cyc, "sg", p, i, sg_code_of[s0]] for i, s0 in enumerate(sp_, 1)
                 ]
                 ft2 = [rng.choice(ft_opts) for _ in range(2)]
                 if cyc == "2026":
@@ -802,7 +786,7 @@ def generate(out: Path, seed: int = 7) -> dict:
             truth["repeaters"][cyc] = rep
 
         rows, ptruth, blank_style = [], [], True
-        order = [code27(c) for c in ran] + [code for _, code in SG]
+        order = intl_codes + [code for _, code in SG]
         for code in order:
             ps = seats[code]
             if not ps or (cyc == "2026" and code == MISSING_2026):
@@ -826,22 +810,20 @@ def generate(out: Path, seed: int = 7) -> dict:
 
         courses_truth = {}
         for c in offer:
-            k = (
-                code27(c)
-                if c["name"] not in not_run
-                else "NR:" + norm_course(c["name"])
-            )
-            courses_truth[k] = {"type": "intl", "ran": c["name"] not in not_run}
+            courses_truth[tkey[c["name"]]] = {
+                "type": "intl",
+                "ran": c["name"] not in not_run,
+            }
         for _, code in SG:
             gone = cyc == "2026" and code == MISSING_2026
             courses_truth[code] = {
                 "type": "sg",
-                "ran": None if gone else True,
-            }  # None = unknown
+                "ran": None if gone else True,  # None = unknown
+            }
         truth["courses"][cyc] = courses_truth
         truth["aliases"][cyc] = alias_truth
         truth["placements"][cyc] = ptruth
-        placed_prev = {p: (code, None) for code, ps in seats.items() for p in ps}
+        placed_prev = {p: code for code, ps in seats.items() for p in ps}
 
     truth["expected_checks"]["prior_course_differs_from_previous_placement"] = sum(
         1 for c in truth["repeaters"]["2027"].values() if "-X" in c
@@ -858,8 +840,9 @@ if __name__ == "__main__":
     ap.add_argument("--out", required=True)
     ap.add_argument("--seed", type=int, default=7)
     a = ap.parse_args()
-    t = generate(Path(a.out).expanduser(), a.seed)
+    out = Path(a.out).expanduser()
+    t = generate(out, a.seed)
     print(
-        f"wrote {Path(a.out).expanduser() / 'raw'}: {len(t['persons'])} invented people, "
+        f"wrote {out / 'raw'}: {len(t['persons'])} invented people, "
         f"2 cycles; ground truth in truth.json"
     )
