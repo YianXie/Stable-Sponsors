@@ -50,6 +50,7 @@ Lineage stays in `data.py`. Stage 2 does not apply it: `derived/teachers.csv` ho
 
 **2026-10-24**
 
-Since PHIL-4 has 3 sponsors, while all other courses have two. The private `derived/` folder is regenerated, and all three rounds are re-run.
+Discovery: PHIL-4 has 3 sponsors, while the rest all have two.
+Changes: PHIL-4's min and max sponsor slot is manually set to 3 in `course_param.csv`, while the rest stay at 2-2. The private `derived/` folder is regenerated. The bug is fixed.
 
 `model --no-lineage` (`load_cycle(..., use_lineage=False)`) disables the lineage fix to replay pre-fix runs (R1, R2). A repeater's prior-year code is matched by code against this year's catalogue. A code that is not in this year's catalogue gives no incumbency, the same as a discontinued course, rather than an error. The lineage file is not read. The run report records `"lineage": true/false`.

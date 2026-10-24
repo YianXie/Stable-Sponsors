@@ -1,9 +1,10 @@
 import json
+from dataclasses import replace
 
 import pytest
 
 from stable_sponsors import model, reproduction
-from stable_sponsors.reproduction import load_office, score
+from stable_sponsors.reproduction import load_office, pinned_repeaters, score
 from tests.conftest import RULES_PATH, make_private_root
 
 
@@ -11,7 +12,7 @@ def test_score_cross_tab():
     model = {"T1": "A", "T2": "A", "T3": "B", "T4": None, "T5": None, "T6": "B"}
     det = {"T1": True, "T2": True, "T3": False, "T4": True, "T5": True, "T6": False}
     office = {"T1": "A", "T2": "B", "T3": "B", "T5": "A"}  # T4, T6 unplaced by office
-    s = score(model, det, office)
+    s = score(model, det, office, {"T6"})
     assert s["cells"]["determined_match"] == ["T1", "T4"]  # T4: both unplaced
     assert s["cells"]["determined_mismatch"] == ["T2", "T5"]
     assert s["cells"]["contested_match"] == ["T3"]
@@ -24,14 +25,22 @@ def test_score_cross_tab():
         "model unplaced, office placed": 1,
     }
     assert s["mismatch_kinds"]["contested"] == {"model placed, office unplaced": 1}
+    assert s["office_unplaced_by_model"] == {
+        "unplaced": 1,  # T4
+        "placed, determined": 0,
+        "placed, contested submitter": 1,  # T6
+        "placed, contested non-submitter": 0,
+    }
     assert s["model_courses_run"] == 2  # A, B
     assert s["office_courses_run"] == 2  # A, B
+    assert s["office_only_courses"] == 0
+    assert s["model_only_courses"] == 0
     assert s["share_of_all"] == pytest.approx(2 / 6)
     assert s["share_of_determined"] == pytest.approx(2 / 4)
 
 
 def test_office_teacher_missing_from_run_is_reported_not_scored():
-    s = score({"T1": "A"}, {"T1": True}, {"T1": "A", "T9": "A"})
+    s = score({"T1": "A"}, {"T1": True}, {"T1": "A", "T9": "A"}, set())
     assert s["office_not_in_run"] == ["T9"]
     assert s["teachers"] == 1
 
@@ -41,14 +50,59 @@ def test_courses_run_counts_distinct_staffed_courses():
         {"T1": "A", "T2": "A", "T3": None},
         {"T1": True, "T2": True, "T3": True},
         {"T1": "A", "T2": "B", "T9": "C"},  # T9 not in run, but C still ran
+        set(),
     )
     assert s["model_courses_run"] == 1
     assert s["office_courses_run"] == 3
+    assert s["office_only_courses"] == 2  # B, C
+    assert s["model_only_courses"] == 0
+
+
+def test_courses_run_by_only_one_side():
+    s = score(
+        {"T1": "A", "T2": "D", "T3": "E"},
+        {"T1": True, "T2": True, "T3": False},
+        {"T1": "A", "T2": "B"},
+        set(),
+    )
+    assert s["office_only_courses"] == 1  # B
+    assert s["model_only_courses"] == 2  # D, E
+
+
+def test_office_unplaced_split_by_model_outcome():
+    s = score(
+        {"T1": None, "T2": "A", "T3": "A", "T4": "B", "T5": "B"},
+        {"T1": False, "T2": True, "T3": False, "T4": False, "T5": True},
+        {"T5": "B"},  # only T5 placed by office, so it is left out
+        {"T1", "T3"},
+    )
+    assert s["office_unplaced_by_model"] == {
+        "unplaced": 1,  # T1, even though a contested submitter
+        "placed, determined": 1,  # T2
+        "placed, contested submitter": 1,  # T3
+        "placed, contested non-submitter": 1,  # T4
+    }
+
+
+def test_pinned_repeaters(toy_cycle):
+    assert pinned_repeaters(toy_cycle.teachers, []) == {
+        "T1000": "INTL-1",
+        "T1004": "INTL-2",
+    }
+    assert pinned_repeaters(toy_cycle.teachers, [0]) == {}  # incumbency rule excluded
+
+
+def test_repeater_with_discontinued_course_is_not_pinned(toy_cycle):
+    teachers = tuple(
+        replace(t, incumbent_course_id=None) if t.teacher_id == "T1000" else t
+        for t in toy_cycle.teachers
+    )
+    assert pinned_repeaters(teachers, []) == {"T1004": "INTL-2"}
 
 
 def test_mismatched_inputs_raise():
     with pytest.raises(ValueError):
-        score({"T1": "A"}, {"T2": True}, {})
+        score({"T1": "A"}, {"T2": True}, {}, set())
 
 
 def test_load_office_filters_cycle_and_status(tmp_path):
@@ -88,5 +142,7 @@ def test_reproduction_reads_the_run_model_writes(tmp_path):
     (out,) = (root / "runs").glob("*_reproduction.json")
     s = json.loads(out.read_text())
     assert s["teachers"] == 5
+    assert s["repeaters"] == 2
+    assert s["repeaters_pinned"] == 2
     # repeaters are determined, and the model places them where the office did
     assert {"T1000", "T1004"} <= set(s["cells"]["determined_match"])
