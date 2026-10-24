@@ -44,12 +44,12 @@ Open: the 3 remaining incumbency cases (the office’s retrospective prior-cours
 
 **2026-10-21**
 
-Since PHIL-4 has 3 sponsors, while the rest has only 2, I will hard-code it into the constraint (i.e. min = max = 3).
-
 A repeater's course can be discontinued the next year, so `incumbent_course_id` may be blank for a repeater. The validation only requires `prior_course_id` (last year's code) to be present.
 
 Lineage stays in `data.py`. Stage 2 does not apply it: `derived/teachers.csv` holds the prior-year code (the prior-course alias is matched by code against this year's catalogue, so a reused code points at the wrong trip). Without lineage the observed allocation breaks rule 0 ×5 instead of ×3. The stage-2 column, renamed to `incumbent_course_id` in week 3, is back to `prior_course_id`, because it is not the incumbent course until lineage resolves it.
 
 **2026-10-24**
+
+Since PHIL-4 has 3 sponsors, while all other courses have two. The private `derived/` folder is regenerated, and all three rounds are re-run.
 
 `model --no-lineage` (`load_cycle(..., use_lineage=False)`) disables the lineage fix to replay pre-fix runs (R1, R2). A repeater's prior-year code is matched by code against this year's catalogue. A code that is not in this year's catalogue gives no incumbency, the same as a discontinued course, rather than an error. The lineage file is not read. The run report records `"lineage": true/false`.
