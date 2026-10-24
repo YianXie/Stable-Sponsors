@@ -24,6 +24,8 @@ def test_score_cross_tab():
         "model unplaced, office placed": 1,
     }
     assert s["mismatch_kinds"]["contested"] == {"model placed, office unplaced": 1}
+    assert s["model_courses_run"] == 2  # A, B
+    assert s["office_courses_run"] == 2  # A, B
     assert s["share_of_all"] == pytest.approx(2 / 6)
     assert s["share_of_determined"] == pytest.approx(2 / 4)
 
@@ -32,6 +34,16 @@ def test_office_teacher_missing_from_run_is_reported_not_scored():
     s = score({"T1": "A"}, {"T1": True}, {"T1": "A", "T9": "A"})
     assert s["office_not_in_run"] == ["T9"]
     assert s["teachers"] == 1
+
+
+def test_courses_run_counts_distinct_staffed_courses():
+    s = score(
+        {"T1": "A", "T2": "A", "T3": None},
+        {"T1": True, "T2": True, "T3": True},
+        {"T1": "A", "T2": "B", "T9": "C"},  # T9 not in run, but C still ran
+    )
+    assert s["model_courses_run"] == 1
+    assert s["office_courses_run"] == 3
 
 
 def test_mismatched_inputs_raise():

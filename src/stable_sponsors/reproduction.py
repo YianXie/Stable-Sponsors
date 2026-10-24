@@ -83,6 +83,9 @@ def score(model: Assignment, determined: dict[str, bool], office: Assignment) ->
         "teachers": n,
         "office_placed": sum(office.get(t) is not None for t in model),
         "model_placed": sum(c is not None for c in model.values()),
+        # a course runs iff it has at least one sponsor; office counts all its placements
+        "office_courses_run": len(set(office.values())),
+        "model_courses_run": len({c for c in model.values() if c is not None}),
         "office_not_in_run": sorted(set(office) - set(model)),
         "cells": {f"{d}_{m}": ids for (d, m), ids in cells.items()},
         "mismatch_kinds": {d: dict(c) for d, c in kinds.items()},
@@ -138,6 +141,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     print(
         f"teachers: {s['teachers']}   placed by office: {s['office_placed']}   by model: {s['model_placed']}"
+    )
+    print(
+        f"courses run by office: {s['office_courses_run']}   by model: {s['model_courses_run']}"
     )
     if s["office_not_in_run"]:
         print(
