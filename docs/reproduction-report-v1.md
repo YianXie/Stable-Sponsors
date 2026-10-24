@@ -2,20 +2,20 @@
 
 |                       |                                                                                  |
 | --------------------- | -------------------------------------------------------------------------------- |
-| **Report version**    | v1.0 (draft)                                                                     |
-| **Date**              | 2026-10-20                                                                       |
+| **Report version**    | v2.0 (draft)                                                                     |
+| **Date**              | 2026-10-24                                                                       |
 | **Author**            | Ian Xie                                                                          |
 | **Research question** | RQ1: Do the documented and assumed rules reproduce the office's real placements? |
-| **Code version**      | commit `0390848`                                                                 |
-| **Rule spec**         | `config/rules-2027.yaml` @ commit `0390848`                                      |
-| **Run reports**       | `private_root/runs/2026-10-19T150311_feasibility`                                |
+| **Code version**      | commit `0a59278`                                                                 |
+| **Rule spec**         | `config/rules-2027.yaml` @ commit `0a59278`                                      |
+| **Run reports**       | `private_root/runs/2026-10-24T170013_model_run.json`                             |
 | **Cycle**             | 2027 Interim Semester                                                            |
 
 ---
 
 ## 1. Summary
 
-Encoded 9 rules (6 hard, 2 priority, 1 deferred) from the office's procedure, interviews, and my own assumptions. The model reproduces 113/131 teachers' allocation exactly, give conditional of which course ran (before lineage fix). After fix, the model produced 81 determined, 46 contested submitters, and 11 contested non-submitters out of the 138 teachers and 69 courses. The residual is concentrated on discretion and data mapping errors. This may include experience, partner preference, or first-come-first-served. It is not explained by the interview or the allocation procedure document. The main caveat is that rule 10 uses an outcome as an input.
+Encoded 9 rules (6 hard, 2 priority, 2 deferred, 1 tie-break set to none) from the office's procedure, interviews, and my own assumptions. The model reproduces 53/138 (38.4%) of all teachers' allocation exactly, given conditional of which course ran (before lineage fix). After fix, the model produce 48/138 (34.8%), 81 determined, 46 contested submitters, and 11 contested non-submitters out of the 138 teachers and 78 courses. The residual is concentrated on discretion and data mapping errors. This includes unencoded rules like experience and partner preference, as well as discretion. The main caveat among rules that are encoded is that rule 10 uses an outcome as an input.
 
 **Answer to RQ1 in one line:** Partly. The main structure is reproduced, but the exact allocation remains ambiguous.
 
@@ -25,18 +25,18 @@ Encoded 9 rules (6 hard, 2 priority, 1 deferred) from the office's procedure, in
 
 ### 2.1 Success criteria (set before the runs)
 
-| Criterion                                                   | Threshold                 | Set before run? |
-| ----------------------------------------------------------- | ------------------------- | --------------- |
-| Observed allocation violates no hard rule                   | 0 violations              | yes             |
-| Same course set as the office                               | exact match               | no              |
-| Same number placed / unplaced                               | exact match               | yes             |
-| Observed placement is among the model's optimal allocations | CpSolverStatus == optimal | yes             |
+| Criterion                                                   | Threshold                 | Set before run? | Outcome                                             |
+| ----------------------------------------------------------- | ------------------------- | --------------- | --------------------------------------------------- |
+| Observed allocation violates no hard rule                   | 0 violations              | yes             | failed                                              |
+| Same course set as the office                               | exact match               | no              | passed only if constructed, failed if unconstrained |
+| Same number placed / unplaced                               | exact match               | yes             | passed only if constructed, failed if unconstrained |
+| Observed placement is among the model's optimal allocations | CpSolverStatus == optimal | yes             | failed, observed placements break hard rules        |
 
 ### 2.2 Predictions written down before the runs
 
 | #   | Prediction                                                                           | Date written | Outcome |
 | --- | ------------------------------------------------------------------------------------ | ------------ | ------- |
-| P1  | 130 placed; most of the 8 observed-unplaced teachers are also unplaced in the model. | 2016-10-18   | held    |
+| P1  | 130 placed; most of the 8 observed-unplaced teachers are also unplaced in the model. | 2026-10-18   | failed  |
 
 There are no other predictions.
 
@@ -45,9 +45,10 @@ There are no other predictions.
 Some agreement with the office's outcome is forced by how the model is set up. It is not evidence
 that the rules are right. Every result below is tagged as one or the other.
 
-| Agreement                          | Why it's by construction (not evidence)       |
-| ---------------------------------- | --------------------------------------------- |
-| 65 courses run (conditional model) | Rule 10 fixes `y` to the observed course set. |
+| Agreement                          | Why it's by construction (not evidence)                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| 65 courses run (conditional model) | Rule 10 fixes `y` to the observed course set.                                          |
+| 131 teachers place, 65 courses ran | I manually set the number of courses require for PHIL-4 to 3, and every course is full |
 
 ---
 
@@ -77,11 +78,11 @@ that the rules are right. Every result below is tagged as one or the other.
 
 `params/course_params.csv` and `params/teacher_params.csv`. Each row carries a `source` and a `status`.
 
-| Parameter                         | Value used          | Status   | Note                                                                   |
-| --------------------------------- | ------------------- | -------- | ---------------------------------------------------------------------- |
-| Sponsors per course (min–max)     | 2–2 for all courses | assumed  | Contradicted by the observed data after run, one course has 3 sponsors |
-| Course qualification requirements | none coded          | assumed  | Makes rule 3 vacuous on real data                                      |
-| Teacher gender                    | not available       | deferred | Rule 5 not applied                                                     |
+| Parameter                         | Value used          | Status   | Note                                                               |
+| --------------------------------- | ------------------- | -------- | ------------------------------------------------------------------ |
+| Sponsors per course (min–max)     | 2–2 for all courses | assumed  | Contradicted by the observed data after run, PHIL-4 has 3 sponsors |
+| Course qualification requirements | none coded          | assumed  | Makes rule 3 vacuous on real data                                  |
+| Teacher gender                    | not available       | deferred | Rule 5 not applied                                                 |
 
 ### 3.4 Pipeline and privacy
 
@@ -120,12 +121,12 @@ Objective: maximize Σ (rank weight + round bonus) · x.
 
 ### 4.1 Rules changed after seeing outcomes (disclosure)
 
-| Rule     | Change                                       | What prompted it                                                                               | n cases | Effect on results                                                |
-| -------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------- |
-| 4        | Repeater's incumbent course counts as ranked | some repeater did not get their prior course, hence broke the hard rule of only ranked courses | 1       | repeaters not getting their prior courses don't break hard rules |
-| 10       | Added: fix course set to observed            | reproduction allocated more teachers and courses than the office                               | —       | optimum 2416 → 2170                                              |
-| 0 / data | Lineage table added (cross-year code fix)    | 4 of 5 incumbency violations were code mismatches                                              | 4       | data is corrected, and contested results increase                |
-| 9 / data | Read sponsor 3 column in raw placement sheet | one sponsor was dropped when generating `derived/`                                             | 1       | 131 teachers are now allocated rather than 130                   |
+| Rule     | Change                                       | What prompted it                                                                                     | n cases | Effect on results                                                |
+| -------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------- |
+| 4        | Repeater's incumbent course counts as ranked | a repeater did not submit ranked courses form and did not get their prior course, which broke rule 1 | 1       | repeaters not getting their prior courses don't break hard rules |
+| 10       | Added: fix course set to observed            | reproduction allocated more teachers and courses than the office                                     | —       | optimum 2416 → 2170                                              |
+| 0 / data | Lineage table added (cross-year code fix)    | 4 of 5 incumbency violations were code mismatches                                                    | 4       | data is corrected, and contested results increase                |
+| 9 / data | Read sponsor 3 column in raw placement sheet | one sponsor was dropped when generating `derived/`                                                   | 1       | 131 teachers are now allocated rather than 130                   |
 
 ---
 
@@ -156,11 +157,11 @@ Hard rules are constraints. Priority rules make up the objective.
 
 ### 5.4 Run log
 
-| Run | Date       | Variant       | Lineage fix? | Rules excluded | Report file                          |
-| --- | ---------- | ------------- | ------------ | -------------- | ------------------------------------ |
-| R1  | 2026-10-18 | unconstrained | no           | -              | `2026-10-18T184920_feasibility.json` |
-| R2  | 2026-10-18 | conditional   | no           | —              | `2026-10-18T191547_feasibility.json` |
-| R3  | 2010-10-19 | conditional   | yes          | -              | `2026-10-19T145139_feasibility.json` |
+| Run | Date       | Variant       | Lineage fix? | Rules excluded | Report file                        |
+| --- | ---------- | ------------- | ------------ | -------------- | ---------------------------------- |
+| R1  | 2026-10-24 | unconstrained | no           | 10             | `2026-10-24T170917_model_run.json` |
+| R2  | 2026-10-24 | conditional   | no           | —              | `2026-10-24T170757_model_run.json` |
+| R3  | 2020-10-24 | conditional   | yes          | -              | `2026-10-24T170013_model_run.json` |
 
 ---
 
@@ -170,41 +171,39 @@ Hard rules are constraints. Priority rules make up the objective.
 
 | Run                           | Feasible | Optimum | Solve time | Determined | Contested (submitters) | Contested (non-submitters) | Placed | Courses run |
 | ----------------------------- | -------- | ------- | ---------- | ---------- | ---------------------- | -------------------------- | ------ | ----------- |
-| R1 unconstrained, pre-lineage | yes      | 2416    | 0.06 s     | 109        | 20                     | 9                          | 138    | 69          |
-| R2 conditional, pre-lineage   | yes      | 2170    | 0.03s      | 97         | 32                     | 9                          | 130    | 65          |
-| R3 conditional, post-lineage  | yes      | 2200    | 0.03 s     | 81         | 46                     | 11                         | 130    | 65          |
+| R1 unconstrained, pre-lineage | yes      | 2419    | 0.09 s     | 111        | 18                     | 9                          | 137    | 68          |
+| R2 conditional, pre-lineage   | yes      | 2194    | 0.03 s     | 99         | 30                     | 9                          | 131    | 65          |
+| R3 conditional, post-lineage  | yes      | 2224    | 0.03 s     | 81         | 46                     | 11                         | 131    | 65          |
 
-Interpretation: since there are fewer repeaters pinned, more seats are opened to competition, and hence more teachers could be contested. A 46 + 11 contested count shows that the encoded rules are able to determine around half of the allocation.
+Interpretation: since there are fewer repeaters pinned, more seats are opened to competition, and more teachers could be contested. A 46 + 11 contested count shows that some teacher allocations (41%) are ambiguous and require better rule encoding and/or discretion.
 
-**Course set (R1 unconstrained vs office):** 9 model-only, 5 office-only.
-The model aims for the highest objective score, so it tries to place every teacher to a course in their ranking as high as possible, whereas the office also takes experiences and partner preferences into consideration, which may hide bonus points that model didn't account.
+**Course set (R1 unconstrained vs office):** 9 model-only, 5 office-only. The model aims to fill as many course slots as possible to reach a higher score.
 
-**Office's 8 unplaced teachers (R2):** model has 2 contested, 6 determined-placed.
-Re-run on R3 if this changed after the lineage fix.
+**Office's 7 unplaced teachers (R2):** model has 2 contested, 6 determined-placed.
 
 ### 6.2 Observed allocation vs hard rules (R3 rule set)
 
 All 130 observed placements matched to teachers and courses.
 
-| Rule              | Violations | By construction?  | Note                                              |
-| ----------------- | ---------- | ----------------- | ------------------------------------------------- |
-| 0 incumbency      | 3          | no                | See 6.4                                           |
-| 3 qualification   | 0          | **yes (vacuous)** | No requirements coded                             |
-| 4 only ranked     | 12         | no                | See 6.3                                           |
-| 8 one per teacher | 0          |                   |                                                   |
-| 9 capacity 2–2    | 0          | no                | Real evidence: the default was never contradicted |
-| 10 course set     | 0          | **yes**           | Fixed by construction                             |
+| Rule              | Violations | By construction?  | Note                                                |
+| ----------------- | ---------- | ----------------- | --------------------------------------------------- |
+| 0 incumbency      | 3          | no                | See 6.4                                             |
+| 3 qualification   | 0          | **yes (vacuous)** | No requirements coded                               |
+| 4 only ranked     | 12         | no                | See 6.3                                             |
+| 8 one per teacher | 0          |                   |                                                     |
+| 9 capacity 2–2    | 0          | no                | PHIL-4 has 3 sponsors, but was fixed before the run |
+| 10 course set     | 0          | **yes**           | Fixed by construction                               |
 
 ### 6.3 Residuals: placements into unranked courses (rule 4, n = 12)
 
 **Classification**
 
-| Class               | n   | Basis                                           |
-| ------------------- | --- | ----------------------------------------------- |
-| Data: mapping error | 1   | the 1 unresolved within-2027 case               |
-| Unencoded rule      | 0   | -                                               |
-| Discretion          | 12  | no obvious pattern observed, suspect discretion |
-| Unresolved          | 0   | -                                               |
+| Class               | n   | Basis                                                              |
+| ------------------- | --- | ------------------------------------------------------------------ |
+| Data: mapping error | 1   | the 1 unresolved within-2027 case                                  |
+| Unencoded rule      | 0   | -                                                                  |
+| Discretion          | 0   | -                                                                  |
+| Unresolved          | 11  | candidates: rule 2 unencoded, rule 6 weights wrong, and discretion |
 
 **Envy test (R3)**
 
@@ -231,23 +230,24 @@ Interpretation: the interim office likely has other criteria not encoded, such a
 
 Hand check: the office's prior-course column disagrees with last year's placement sheet for these cases.
 That column was added retrospectively, so **the allocation may be correct and the research data wrong.**
-The 2026 audit was inconclusive (28/28 "no 2026 placement", likely because `derived/` has 2027 only).
 
-Classification for now: the interim office made a mistake when labeling the prior courses.
+Data: prior-course column suspected wrong; pending 2026 audit.
 
 ### 6.5 Overall reproduction score
 
-| Metric                                                  | Value    | Run |
-| ------------------------------------------------------- | -------- | --- |
-| % of teachers who are determined _and_ match the office | 48 / 138 | R3  |
+| Metric                                                  | Share of all teachers | Share of determined teachers | Both placed | Both unplaced | Run |
+| ------------------------------------------------------- | --------------------- | ---------------------------- | ----------- | ------------- | --- |
+| % of teachers who are determined _and_ match the office | 53 / 138 = 38.4%      | 54 / 111 = 48.6%             | 54          | 0             | R1  |
+| % of teachers who are determined _and_ match the office | 54 / 138 = 39.1%      | 53 / 99 = 53.5%              | 54          | 0             | R2  |
+| % of teachers who are determined _and_ match the office | 48 / 138 = 34.8%      | 48 / 81 = 59.2%              | 48          | 0             | R3  |
 
 ---
 
 ## 7. Findings
 
-1. **Course codes are per-year; multi-year analysis needs a lineage table.** 4 of the 5 initial incumbency violations were this pipeline artefact, not office behavior.
-2. **The set of running courses appears to be fixed before sponsor allocation.** There are a total of 138 teachers and 69 courses, but only 130 were allocated and 65 were ran. This explains _how many_ teachers go unplaced, not _which_. Status: inference, pending office confirmation.
-3. **Encoded rules reproduce capacity, qualifications and course set; the residual concentrates in 12 placements into unranked courses** that the encoded priorities don't explain. Caveat: qualifications are vacuous and the course set is by construction, so only capacity is real evidence here.
+1. **Determined teachers can (and often are) allocated to other courses.** 33 out of 81 teachers where the rules give a unique answer were allocated else where. This is a strong sign of discretion and rules not covered by my encoding.
+2. **Course codes are per-year; multi-year analysis needs a lineage table.** 4 of the 5 initial incumbency violations were this pipeline artefact, and courses get cancelled each year.
+3. **The set of running courses appears to be fixed before sponsor allocation.** There are a total of 138 teachers and 69 courses, but only 130 were allocated and 65 ran. This explains _how many_ teachers go unplaced, not _which_. Status: inference, pending office confirmation.
 4. **Rules changed after seeing outcomes:** rule 4 (n = 1) and rule 10. See 4.1.
 
 ---
@@ -269,13 +269,13 @@ Classification for now: the interim office made a mistake when labeling the prio
 
 ## 9. Open items
 
-| #   | Item                                                                                                    | Blocks which conclusion?         |
-| --- | ------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| 1   | Run 2026 through the pipeline; repeat the repeater audit                                                | 6.4 classification               |
-| 2   | Round-order sensitivity: re-run envy with rule-6 bonuses = 0                                            | 6.3 interpretation               |
-| 3   | Contest table with pre-registered features (2026 experience, submission timestamp, co-sponsor requests) | Explaining the 46 + 11 contested |
-| 4   | Resolve the remaining only-ranked mapping case                                                          | 6.3 classification               |
-| 5   | Office email to Ms. Natt: sent                                                                          | Rules 3, 5, 9, 10, 0, 6          |
+| #   | Item                                                                                 | Blocks which conclusion?         |
+| --- | ------------------------------------------------------------------------------------ | -------------------------------- |
+| 1   | Run 2026 through the pipeline; repeat the repeater audit                             | 6.4 classification               |
+| 2   | Round-order sensitivity: re-run envy with rule-6 bonuses = 0                         | 6.3 interpretation               |
+| 3   | Contest table with pre-registered features (2026 experience and co-sponsor requests) | Explaining the 46 + 11 contested |
+| 4   | Resolve the remaining only-ranked mapping case                                       | 6.3 classification               |
+| 5   | Office email to Ms. Natt: sent (Oct 17th), not replied yet                           | Rules 3, 5, 9, 10, 0, 6          |
 
 ### Questions for the office
 
@@ -297,7 +297,7 @@ Classification for now: the interim office made a mistake when labeling the prio
 
 ## 10. Conclusion and next step
 
-The encoded and assume rules are partially enough to reproduce the office's allocation result. All hardwares can be satisfied, but exact allocation differs. The rule set is good enough to use as a baseline for RQ2 if the office can explain each discretion result and all threats can be mitigated.
+The encoded and assumed rules are partially enough to reproduce the office's allocation result. All hard rules can be satisfied by the model, but not by the observed placements. Exact allocation also differs between the model and the office. The rule set is good enough to use as a baseline for RQ2 after the rule-6 sensitivity check passed and the office answered the questions, and after the determined-mismatch count falls below 15.
 
 ---
 
@@ -305,10 +305,11 @@ The encoded and assume rules are partially enough to reproduce the office's allo
 
 ```sh
 uv run python -m stable_sponsors.params --cycle 2027
-uv run python -m stable_sponsors.model --optimize --exclude 10   # R1, unconstrained
-uv run python -m stable_sponsors.model --optimize                # R2/R3, conditional
+uv run python -m stable_sponsors.model --optimize --no-lineage --exclude 10  # R1, before fix, unconstrained
+uv run python -m stable_sponsors.model --optimize --no-lineage               # R2, before fix, conditional
+uv run python -m stable_sponsors.model --optimize                            # R3, after fix, conditional
 uv run python -m stable_sponsors.compare
-uv run python -m stable_sponsors.review_cases
+uv run python -m stable_sponsors.reproduction
 ```
 
 Requires a local `config/pseudonymize.yaml` pointing at `private_root`. The real data is not public.
