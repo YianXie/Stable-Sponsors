@@ -1,7 +1,9 @@
+import json
 from dataclasses import replace
 
+from stable_sponsors import model
 from stable_sponsors.model import check_feasibility, diagnose, load_hard_rules
-from tests.conftest import RULES_PATH
+from tests.conftest import RULES_PATH, make_private_root
 
 # Hard rules only: feasibility is a property of the constraints, not the objective.
 RULES = load_hard_rules(RULES_PATH)
@@ -36,3 +38,29 @@ def test_diagnose_finds_planted_conflict(toy_cycle):
     d = diagnose(bad, RULES)
     assert d["leave_one_out"][0] == "feasible"  # drop incumbency → fixed
     assert d["leave_one_out"][9] == "feasible"  # drop capacity → fixed
+
+
+def _run_report(tmp_path, *args: str) -> dict:
+    model.main(
+        [
+            "--config",
+            str(tmp_path / "pseudonymize.yaml"),
+            "--rules",
+            str(RULES_PATH),
+            *args,
+        ]
+    )
+    (path,) = (tmp_path / "private" / "runs").glob(f"*{model.RUN_SUFFIX}.json")
+    return json.loads(path.read_text())
+
+
+def test_cli_records_lineage_on_by_default(tmp_path):
+    make_private_root(tmp_path)
+    assert _run_report(tmp_path)["lineage"] is True
+
+
+def test_cli_no_lineage_needs_no_lineage_file(tmp_path):
+    make_private_root(tmp_path, lineage=False)
+    report = _run_report(tmp_path, "--no-lineage")
+    assert report["lineage"] is False
+    assert report["feasibility_result"]["assignment"]["T1000"] == "INTL-1"

@@ -266,6 +266,34 @@ def resolve_incumbency(
     return tuple(out)
 
 
+def resolve_incumbency_by_code(
+    teachers: tuple[Teacher, ...], courses: tuple[Course, ...]
+) -> tuple[Teacher, ...]:
+    """The pre-lineage behaviour, kept only to reproduce runs from before the fix.
+
+    Matches each repeater's prior-year code against this year's catalogue by
+    code. This is the "same code" fallback resolve_incumbency refuses: a reused
+    code points at the wrong trip. A code missing from this year's catalogue
+    gives no incumbency.
+
+    Args:
+        teachers (tuple[Teacher, ...]): teachers of a single cycle.
+        courses (tuple[Course, ...]): this cycle's courses.
+
+    Returns:
+        tuple[Teacher, ...]: teachers with incumbent_course_id set for repeaters
+            whose prior code exists this year (None otherwise).
+    """
+
+    course_ids = {c.course_id for c in courses}
+    return tuple(
+        replace(t, incumbent_course_id=t.prior_course_id)
+        if t.is_repeater and t.prior_course_id in course_ids
+        else t
+        for t in teachers
+    )
+
+
 def load_teachers(path: Path) -> tuple[Teacher, ...]:
     """Reads teacher data from a CSV file and returns a tuple of Teacher objects.
 
@@ -573,6 +601,7 @@ def load_cycle(
     params_dir: Path | None = None,
     cycle: int | None = None,
     lineage_path: Path | None = None,
+    use_lineage: bool = True,
 ) -> Cycle:
     """Loads a cycle of teacher-course preferences from CSV files in the specified directory.
 
@@ -581,6 +610,7 @@ def load_cycle(
         params_dir (Path | None, optional): An optional path to the directory containing parameter CSV files. If not provided, it defaults to the base path.
         cycle (int | None, optional): Keep only rows for this cycle. derived/ holds every cycle in the same files, so pass this for real data. None keeps all rows (fine for single-cycle fixtures).
         lineage_path (Path | None, optional): The prior-year -> this-year course lineage CSV. Defaults to params_dir / "course_lineage.csv".
+        use_lineage (bool, optional): False disables the lineage fix: repeaters are matched to this year's courses by code (resolve_incumbency_by_code) and lineage_path is not read. Only for reproducing pre-fix runs. Defaults to True.
 
     Returns:
         Cycle: An instance of the Cycle class containing teachers, courses, and preferences.
@@ -606,9 +636,12 @@ def load_cycle(
         preferences = tuple(p for p in preferences if p.cycle == cycle)
 
     # Resolve after filtering: lineage maps one prior year into one target year.
-    teachers = resolve_incumbency(
-        teachers, courses, lineage_path or params_dir / "course_lineage.csv"
-    )
+    if use_lineage:
+        teachers = resolve_incumbency(
+            teachers, courses, lineage_path or params_dir / "course_lineage.csv"
+        )
+    else:
+        teachers = resolve_incumbency_by_code(teachers, courses)
     teachers = load_teacher_params(params_dir / "teacher_params.csv", teachers)
     courses = load_course_params(params_dir / "course_params.csv", courses)
 

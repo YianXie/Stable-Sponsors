@@ -1,12 +1,10 @@
 import json
-import shutil
 
 import pytest
-import yaml
 
 from stable_sponsors import model, reproduction
 from stable_sponsors.reproduction import load_office, score
-from tests.conftest import RULES_PATH, TOY_DIR
+from tests.conftest import RULES_PATH, make_private_root
 
 
 def test_score_cross_tab():
@@ -69,18 +67,8 @@ def test_reproduction_reads_the_run_model_writes(tmp_path):
     for the old one. This runs both CLIs on the toy cycle in a throwaway
     private_root laid out like the real one.
     """
+    cfg = make_private_root(tmp_path)
     root = tmp_path / "private"
-    for sub, names in {
-        "derived": ("teachers", "courses", "preferences", "placements"),
-        "params": ("teacher_params", "course_params"),
-        "key": ("course_lineage",),
-    }.items():
-        (root / sub).mkdir(parents=True)
-        for name in names:
-            shutil.copy(TOY_DIR / f"{name}.csv", root / sub)
-    (root / "raw").mkdir()
-    cfg = tmp_path / "pseudonymize.yaml"
-    cfg.write_text(yaml.safe_dump({"private_root": str(root), "cycles": {2027: {}}}))
 
     model.main(["--config", str(cfg), "--rules", str(RULES_PATH), "--optimize"])
     reproduction.main(["--config", str(cfg)])

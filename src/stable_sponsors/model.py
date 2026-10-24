@@ -60,13 +60,17 @@ def load_hard_rules(path: Path) -> list[dict]:
     return load_rules(path, classes=("hard",))
 
 
-def load_cycle_from_config(cfg: dict, cycle: int) -> Cycle:
-    """One cycle of the real data under private_root: derived/, params/ and key/course_lineage.csv."""
+def load_cycle_from_config(cfg: dict, cycle: int, use_lineage: bool = True) -> Cycle:
+    """One cycle of the real data under private_root: derived/, params/ and key/course_lineage.csv.
+
+    use_lineage=False disables the lineage fix (see data.load_cycle).
+    """
     return load_cycle(
         out_path(cfg, "derived"),
         params_dir=out_path(cfg, "params"),
         cycle=cycle,
         lineage_path=out_path(cfg, "key") / "course_lineage.csv",
+        use_lineage=use_lineage,
     )
 
 
@@ -204,10 +208,18 @@ def main(argv: list[str] | None = None) -> None:
     )
     ap.add_argument("--time-limit", default=60.0, type=float)
     ap.add_argument("--optimize", action="store_true")
+    ap.add_argument(
+        "--no-lineage",
+        dest="lineage",
+        action="store_false",
+        help="disable the lineage fix: match repeaters' prior course by code (pre-fix behaviour)",
+    )
     args = ap.parse_args(argv)
 
     config = load_config(args.config)
-    cycle = load_cycle_from_config(config, args.cycle)
+    cycle = load_cycle_from_config(config, args.cycle, use_lineage=args.lineage)
+    if not args.lineage:
+        print("note: lineage fix disabled: prior courses matched by code")
     gone = sum(t.is_repeater and t.incumbent_course_id is None for t in cycle.teachers)
     if gone:
         print(
@@ -249,6 +261,7 @@ def main(argv: list[str] | None = None) -> None:
         "when": datetime.now().isoformat(timespec="seconds"),
         "cycle": args.cycle,
         "optimize": args.optimize,
+        "lineage": args.lineage,
         "rules_file": str(args.rules),
         "excluded": sorted(exclude),
         "feasibility_result": asdict(feasibility_result),

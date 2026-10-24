@@ -104,6 +104,33 @@ def test_discontinued_course_means_no_incumbency(tmp_path):
     assert "T1000" not in violations(cyc, obs)["0 incumbency"]
 
 
+def test_lineage_off_reuses_prior_code(tmp_path):
+    """use_lineage=False is the pre-fix behaviour: the lineage table is ignored
+    and the prior-year code is matched by code against this year's catalogue."""
+    base = _toy_with_lineage(
+        tmp_path,
+        "2026,INTL-1,2027,INTL-2,toy,confirmed,\n2026,INTL-2,2027,INTL-2,toy,confirmed,\n",
+    )
+    cyc = load_cycle(base, use_lineage=False)
+    t1000 = next(t for t in cyc.teachers if t.teacher_id == "T1000")
+    assert t1000.incumbent_course_id == "INTL-1"
+
+
+def test_lineage_off_unknown_code_means_no_incumbency(tmp_path):
+    """Without lineage, a prior code missing from this year's catalogue pins
+    nothing. The lineage file is not needed at all."""
+    for f in TOY_DIR.glob("*.csv"):
+        shutil.copy(f, tmp_path)
+    (tmp_path / "course_lineage.csv").unlink()
+    teachers = tmp_path / "teachers.csv"
+    teachers.write_text(teachers.read_text().replace("INTL-1 ", "INTL-9 ", 1))
+
+    cyc = load_cycle(tmp_path, use_lineage=False)
+    t1000 = next(t for t in cyc.teachers if t.teacher_id == "T1000")
+    assert t1000.prior_course_id == "INTL-9"
+    assert t1000.incumbent_course_id is None
+
+
 # --- observed placements ---------------------------------------------------
 
 
