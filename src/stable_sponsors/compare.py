@@ -4,8 +4,6 @@ from pathlib import Path
 from stable_sponsors.data import (
     ObservedPlacement,
     load_observed_placements,
-    read_csv,
-    read_lineage,
 )
 from stable_sponsors.model import (
     SOLVED,
@@ -212,27 +210,7 @@ def main() -> None:
     observed = load_observed_placements(derived / "placements.csv", cycle)
 
     # Repeaters' self-reported prior course vs the 2026 placement records.
-    pl = read_csv(derived / "placements.csv")
-    pl_2026 = pl[pl["cycle"] == "2026"]
-    placed_2026 = dict(zip(pl_2026["teacher_id"], pl_2026["course_id"]))
-    lineage = read_lineage(out_path(config, "key") / "course_lineage.csv", {CYCLE})
     obs = _placed(observed)
-
-    tally = Counter()
-    for t in cycle.teachers:
-        if not t.is_repeater:
-            continue
-        rec = placed_2026.get(t.teacher_id)
-        if rec is None:
-            tally["no 2026 placement on record"] += 1
-        elif rec == t.prior_course_id:
-            tally["self-report agrees with records"] += 1
-        else:
-            followed = obs.get(t.teacher_id) == lineage.get(rec)
-            tally[f"DISAGREE; 2027 placement follows records={followed}"] += 1
-    print(dict(tally))
-
-    print(score_observed(cycle, rules, observed, exclude=frozenset(), time_limit=30.0))
 
     print(
         "observed teachers matched to cycle:",

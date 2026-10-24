@@ -24,11 +24,20 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from stable_sponsors.data import read_csv
-from stable_sponsors.model import DETERMINACY_KEY, OPTIMAL_KEY, RUN_SUFFIX
+from stable_sponsors.data import Teacher, read_csv
+from stable_sponsors.model import (
+    DETERMINACY_KEY,
+    OPTIMAL_KEY,
+    RUN_SUFFIX,
+    load_cycle_from_config,
+)
 from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 
 Assignment = dict[str, str | None]  # teacher_id -> course_id, None = unplaced
+
+INCUMBENCY_RULE = (
+    0  # incumbency_preassignment: pins repeaters to their incumbent course
+)
 
 
 def load_office(placements_csv: Path, cycle: int) -> Assignment:
@@ -43,6 +52,22 @@ def load_office(placements_csv: Path, cycle: int) -> Assignment:
     return dict(zip(df["teacher_id"], df["course_id"]))
 
 
+def pinned_repeaters(
+    teachers: tuple[Teacher, ...], excluded: list[int]
+) -> dict[str, str]:
+    """Repeaters the incumbency rule fixes to a course: teacher_id -> incumbent course_id.
+
+    Empty if the rule was excluded. Repeaters whose prior course was discontinued are not pinned.
+    """
+    if INCUMBENCY_RULE in excluded:
+        return {}
+    return {
+        t.teacher_id: t.incumbent_course_id
+        for t in teachers
+        if t.is_repeater and t.incumbent_course_id is not None
+    }
+
+
 def mismatch_kind(model: str | None, office: str | None) -> str:
     if model is None:
         return "model unplaced, office placed"
@@ -51,11 +76,35 @@ def mismatch_kind(model: str | None, office: str | None) -> str:
     return "different course"
 
 
-def score(model: Assignment, determined: dict[str, bool], office: Assignment) -> dict:
+OFFICE_UNPLACED_KINDS = (
+    "unplaced",
+    "placed, determined",
+    "placed, contested submitter",
+    "placed, contested non-submitter",
+)
+
+
+def office_unplaced_kind(model: str | None, determined: bool, submitted: bool) -> str:
+    if model is None:
+        return "unplaced"
+    if determined:
+        return "placed, determined"
+    if submitted:
+        return "placed, contested submitter"
+    return "placed, contested non-submitter"
+
+
+def score(
+    model: Assignment,
+    determined: dict[str, bool],
+    office: Assignment,
+    contested_submitters: set[str],
+) -> dict:
     """Cross-tabulate determined/contested x match/mismatch over the teachers in the run.
 
     ``office`` may omit unplaced teachers. Office teachers missing from the run are counted
     separately (they mean the run and derived/ are out of sync) and are not scored.
+    ``contested_submitters`` splits the model's placements of teachers the office left unplaced.
     """
     if set(model) != set(determined):
         raise ValueError("assignment and determinacy cover different teachers")
@@ -64,9 +113,16 @@ def score(model: Assignment, determined: dict[str, bool], office: Assignment) ->
         (d, m): [] for d in ("determined", "contested") for m in ("match", "mismatch")
     }
     kinds: dict[str, Counter] = {"determined": Counter(), "contested": Counter()}
+    office_unplaced = dict.fromkeys(OFFICE_UNPLACED_KINDS, 0)
     for tid in sorted(model):
         d = "determined" if determined[tid] else "contested"
         o = office.get(tid)
+        if o is None:
+            office_unplaced[
+                office_unplaced_kind(
+                    model[tid], determined[tid], tid in contested_submitters
+                )
+            ] += 1
         if model[tid] == o:
             cells[(d, "match")].append(tid)
         else:
@@ -79,16 +135,21 @@ def score(model: Assignment, determined: dict[str, bool], office: Assignment) ->
     det_match_placed = sum(
         office.get(t) is not None for t in cells[("determined", "match")]
     )
+    # a course runs iff it has at least one sponsor; office counts all its placements
+    office_courses = set(office.values())
+    model_courses = {c for c in model.values() if c is not None}
     return {
         "teachers": n,
         "office_placed": sum(office.get(t) is not None for t in model),
         "model_placed": sum(c is not None for c in model.values()),
-        # a course runs iff it has at least one sponsor; office counts all its placements
-        "office_courses_run": len(set(office.values())),
-        "model_courses_run": len({c for c in model.values() if c is not None}),
+        "office_courses_run": len(office_courses),
+        "model_courses_run": len(model_courses),
+        "office_only_courses": len(office_courses - model_courses),
+        "model_only_courses": len(model_courses - office_courses),
         "office_not_in_run": sorted(set(office) - set(model)),
         "cells": {f"{d}_{m}": ids for (d, m), ids in cells.items()},
         "mismatch_kinds": {d: dict(c) for d, c in kinds.items()},
+        "office_unplaced_by_model": office_unplaced,
         "determined_match": hit,
         "determined_match_placed": det_match_placed,
         "determined_match_unplaced": hit - det_match_placed,
@@ -133,8 +194,21 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     office = load_office(placements, run["cycle"])
-    s = score(run[OPTIMAL_KEY]["assignment"], run[DETERMINACY_KEY], office)
+    s = score(
+        run[OPTIMAL_KEY]["assignment"],
+        run[DETERMINACY_KEY],
+        office,
+        set(run["contested_submitters"]),
+    )
     c = s["cells"]
+
+    # runs from before the --no-lineage flag always applied the lineage fix
+    cycle = load_cycle_from_config(config, run["cycle"], run.get("lineage", True))
+    pinned = pinned_repeaters(cycle.teachers, run["excluded"])
+    assignment = run[OPTIMAL_KEY]["assignment"]
+    off_pin = sorted(t for t, cid in pinned.items() if assignment.get(t) != cid)
+    s["repeaters"] = sum(t.is_repeater for t in cycle.teachers)
+    s["repeaters_pinned"] = len(pinned)
 
     print(
         f"run: {run_path.name}  cycle {run['cycle']}  excluded rules: {run['excluded'] or 'none'}"
@@ -145,6 +219,22 @@ def main(argv: list[str] | None = None) -> None:
     print(
         f"courses run by office: {s['office_courses_run']}   by model: {s['model_courses_run']}"
     )
+    print(
+        f"courses run only by office: {s['office_only_courses']}   only by model: {s['model_only_courses']}"
+    )
+    pin_note = (
+        f"rule {INCUMBENCY_RULE} excluded"
+        if INCUMBENCY_RULE in run["excluded"]
+        else "the rest have a discontinued prior course"
+    )
+    print(
+        f"repeaters pinned by model: {s['repeaters_pinned']} of {s['repeaters']} ({pin_note})"
+    )
+    if off_pin:
+        print(
+            f"WARNING: {len(off_pin)} pinned repeater(s) not in their incumbent course in this run;"
+            " the data changed since the run. Re-run the model."
+        )
     if s["office_not_in_run"]:
         print(
             f"WARNING: {len(s['office_not_in_run'])} office-placed teacher(s) not in the run (not scored)"
@@ -169,6 +259,9 @@ def main(argv: list[str] | None = None) -> None:
                 f"{d} mismatches: "
                 + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items()))
             )
+    print(f"office-unplaced teachers, by model ({s['teachers'] - s['office_placed']}):")
+    for k, v in s["office_unplaced_by_model"].items():
+        print(f"  {k:<33}{v:>4}")
     print(
         "\ncontested match/mismatch reflects one arbitrary optimal solution: not evidence."
     )
