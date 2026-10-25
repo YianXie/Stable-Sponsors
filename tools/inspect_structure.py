@@ -10,21 +10,14 @@ only. Nothing printed identifies a person, so the output is safe to share.
 
 from __future__ import annotations
 
-import re
 import sys
 from collections import Counter
 from pathlib import Path
 
 import openpyxl
 
-
-def shape(v) -> str:
-    s = str(v)
-    s = re.sub(r"[A-Z]+", "A", s)
-    s = re.sub(r"[a-z]+", "a", s)
-    s = re.sub(r"(?:Aa)+", "Aa", s)
-    s = re.sub(r"[0-9]+", lambda m: "9" * min(len(m.group()), 4), s)
-    return s[:40]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from stable_sponsors.pseudonymize.idmap import shape
 
 
 def describe(root: Path) -> None:

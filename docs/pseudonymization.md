@@ -5,7 +5,7 @@ dataset keyed by `T###` teacher IDs and trip codes. Two stages with a human
 review in between, because the identity join is a judgment call and a wrong
 link becomes a false RQ1 residual.
 
-```
+```bash
 pip install pandas openpyxl pyyaml pytest
 
 cp config/pseudonymize.example.yaml config/pseudonymize.yaml    # gitignored; set private_root

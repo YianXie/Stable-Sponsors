@@ -3,14 +3,18 @@
     "idmap",
     "leakcheck",
     "leximin",
+    "Natt",
     "NEPA",
     "NEWZ",
     "obrien",
+    "Overfitting",
     "preassignment",
     "pseudonymization",
     "pseudonymize",
     "pytest",
     "timespec",
-    "unranked"
-  ]
+    "unranked",
+    "unrun"
+  ],
+  "markdown.validate.enabled": false
 }

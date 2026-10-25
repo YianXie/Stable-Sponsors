@@ -8,7 +8,7 @@ import yaml
 from ortools.sat.python import cp_model
 
 from stable_sponsors.data import Cycle, load_cycle
-from stable_sponsors.pseudonymize.idmap import load_config, out_path
+from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 from stable_sponsors.rules import hard, priority, tiebreak  # noqa: F401  (registers encoders)
 from stable_sponsors.rules.context import Ctx, build_ctx
 from stable_sponsors.rules.registry import ENCODERS
@@ -20,6 +20,16 @@ STATUS = {
     cp_model.MODEL_INVALID: "invalid",
     cp_model.UNKNOWN: "unknown",  # hit the time limit. NOT the same as infeasible
 }
+SOLVED = (cp_model.OPTIMAL, cp_model.FEASIBLE)  # the solver found an assignment
+
+# The run report contract: main() writes runs/<when>_model_run.json, reproduction.py reads it.
+RUN_SUFFIX = "_model_run"
+OPTIMAL_KEY = (
+    "optimal_result"  # asdict(OptimalResult); only written when proven optimal
+)
+DETERMINACY_KEY = (
+    "determinacy"  # teacher_id -> same placement in every optimal solution
+)
 
 
 @dataclass(frozen=True)
@@ -38,14 +48,30 @@ class OptimalResult:
     assignment: dict[str, str | None] | None
 
 
-def load_rules(path: Path, classes=("hard", "priority")) -> list[dict]:
-    rules = yaml.safe_load(path.read_text())["rules"]
+def active_rules(rules: list[dict], classes=("hard", "priority")) -> list[dict]:
     return [r for r in rules if r["class"] in classes and r["status"] != "deferred"]
 
 
+def load_rules(path: Path, classes=("hard", "priority")) -> list[dict]:
+    return active_rules(yaml.safe_load(path.read_text())["rules"], classes)
+
+
 def load_hard_rules(path: Path) -> list[dict]:
-    rules = yaml.safe_load(path.read_text())["rules"]
-    return [r for r in rules if r["class"] == "hard" and r["status"] != "deferred"]
+    return load_rules(path, classes=("hard",))
+
+
+def load_cycle_from_config(cfg: dict, cycle: int, use_lineage: bool = True) -> Cycle:
+    """One cycle of the real data under private_root: derived/, params/ and key/course_lineage.csv.
+
+    use_lineage=False disables the lineage fix (see data.load_cycle).
+    """
+    return load_cycle(
+        out_path(cfg, "derived"),
+        params_dir=out_path(cfg, "params"),
+        cycle=cycle,
+        lineage_path=out_path(cfg, "key") / "course_lineage.csv",
+        use_lineage=use_lineage,
+    )
 
 
 def build_model(
@@ -61,13 +87,13 @@ def build_model(
 
 
 def _solve(
-    ctx: Ctx, time_limit: float
+    model: cp_model.CpModel, time_limit: float
 ) -> tuple[cp_model.CpSolver, cp_model.CpSolverStatus]:
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit
-    solver.parameters.random_seed = 0
+    solver.parameters.random_seed = 0  # reproducible runs
     solver.parameters.num_workers = 8
-    return solver, solver.solve(ctx.model)
+    return solver, solver.solve(model)
 
 
 def _assignment(
@@ -84,18 +110,9 @@ def check_feasibility(
     cycle, rules, exclude=frozenset(), time_limit=30.0
 ) -> FeasibilityResult:
     ctx = build_model(cycle, rules, exclude)
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = time_limit
-    solver.parameters.random_seed = 0  # reproducible runs
-    solver.parameters.num_workers = 8
-    status = STATUS[solver.solve(ctx.model)]
-
-    assignment: dict[str, str | None] | None = None
-    if status == "feasible":
-        assignment = {t.teacher_id: None for t in cycle.teachers}
-        for (tid, cid), var in ctx.x.items():
-            if solver.value(var):
-                assignment[tid] = cid
+    solver, code = _solve(ctx.model, time_limit)
+    status = STATUS[code]
+    assignment = _assignment(solver, ctx, cycle) if status == "feasible" else None
     applied = tuple(r["id"] for r in rules if r["id"] not in exclude)
     return FeasibilityResult(status, applied, solver.wall_time, assignment)
 
@@ -106,8 +123,7 @@ def solve_optimal(
     ctx = build_model(cycle, rules, exclude)
     if not ctx.objective:
         raise ValueError("no priority rules applied: nothing to optimize")
-    ctx.model.maximize(sum(ctx.objective))
-    solver, code = _solve(ctx, time_limit)
+    solver, code = _solve(ctx.model, time_limit)
 
     if code == cp_model.OPTIMAL:
         return OptimalResult(
@@ -129,22 +145,26 @@ def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str,
     if base.status != "optimal":
         raise RuntimeError(f"can't analyse ties: base solve was {base.status}")
     assert base.assignment is not None  # always set when status is "optimal"
+
+    # One model pinned at the optimum; each teacher's check runs on a copy of it.
+    ctx = build_model(cycle, rules, exclude=exclude)
+    ctx.model.add(sum(ctx.objective) == base.value)
+    if _solve(ctx.model, time_limit)[1] not in SOLVED:
+        raise RuntimeError(
+            "check model can't reach the optimum: base and check models differ"
+        )
     out = {}
     for tid, cid in base.assignment.items():
-        ctx = build_model(cycle, rules, exclude=exclude)
-        ctx.model.add(sum(ctx.objective) == base.value)
-        _, code = _solve(ctx, time_limit)
-        if code not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            raise RuntimeError(
-                "check model can't reach the optimum: base and check models differ"
-            )
-
+        model = ctx.model.clone()
+        x = {
+            c: model.get_bool_var_from_proto_index(ctx.x[(tid, c)].index) for c in ctx.y
+        }
         if cid is None:
-            ctx.model.add(sum(ctx.x[(tid, c.course_id)] for c in cycle.courses) >= 1)
+            model.add(sum(x.values()) >= 1)
         else:
-            ctx.model.add(ctx.x[(tid, cid)] == 0)
-        _, code = _solve(ctx, time_limit)
-        if code not in (cp_model.INFEASIBLE, cp_model.OPTIMAL, cp_model.FEASIBLE):
+            model.add(x[cid] == 0)
+        _, code = _solve(model, time_limit)
+        if code != cp_model.INFEASIBLE and code not in SOLVED:
             raise RuntimeError(f"timed out checking {tid}")
         out[tid] = code == cp_model.INFEASIBLE  # True = determined
     return out
@@ -173,37 +193,44 @@ def diagnose(cycle, rules) -> dict:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the model for a given cycle, check feasibility of hard rules, and optionally optimize."""
+
     ### Parse command line arguments
 
     ap = argparse.ArgumentParser(
-        description="Check whether the hard rules are feasible and whether the optimal assignment is determined (no ties) for a given cycle"
+        description="Check whether the hard rules are feasible and run the optimal assignment for the given cycle.  Writes a JSON report to runs/."
     )
-    ap.add_argument("--config", default="config/pseudonymize.yaml")
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument("--rules", default="config/rules-2027.yaml", type=Path)
     ap.add_argument("--cycle", default=2027, type=int)
     ap.add_argument(
-        "--exclude", nargs="*", type=int, default=[], help="rule ids to skip, e.g. 5"
+        "--exclude", nargs="*", type=int, default=[], help="rule ids to skip, e.g. 10"
     )
     ap.add_argument("--time-limit", default=60.0, type=float)
     ap.add_argument("--optimize", action="store_true")
+    ap.add_argument(
+        "--no-lineage",
+        dest="lineage",
+        action="store_false",
+        help="disable the lineage fix: match repeaters' prior course by code (pre-fix behaviour)",
+    )
     args = ap.parse_args(argv)
 
     config = load_config(args.config)
-    derived, params = out_path(config, "derived"), out_path(config, "params")
-    cycle = load_cycle(
-        derived,
-        params_dir=params,
-        cycle=args.cycle,
-        lineage_path=out_path(config, "key") / "course_lineage.csv",
-    )
+    cycle = load_cycle_from_config(config, args.cycle, use_lineage=args.lineage)
+    if not args.lineage:
+        print("note: lineage fix disabled: prior courses matched by code")
     gone = sum(t.is_repeater and t.incumbent_course_id is None for t in cycle.teachers)
     if gone:
-        print(f"note: {gone} repeater(s) whose prior course was discontinued: no incumbency applied")
+        print(
+            f"note: {gone} repeater(s) whose prior course was discontinued: no incumbency applied"
+        )
 
     ### Check feasibility of hard rules, optionally excluding some
 
-    hard_rules = load_hard_rules(args.rules)
-    all_ids = {r["id"] for r in yaml.safe_load(args.rules.read_text())["rules"]}
+    all_rules = yaml.safe_load(args.rules.read_text())["rules"]
+    hard_rules = active_rules(all_rules, classes=("hard",))
+    all_ids = {r["id"] for r in all_rules}
     exclude = frozenset(args.exclude)
     if exclude - all_ids:
         raise SystemExit(f"--exclude {sorted(exclude - all_ids)}: no such rule id")
@@ -234,6 +261,7 @@ def main(argv: list[str] | None = None) -> None:
         "when": datetime.now().isoformat(timespec="seconds"),
         "cycle": args.cycle,
         "optimize": args.optimize,
+        "lineage": args.lineage,
         "rules_file": str(args.rules),
         "excluded": sorted(exclude),
         "feasibility_result": asdict(feasibility_result),
@@ -273,7 +301,7 @@ def main(argv: list[str] | None = None) -> None:
     ### Check optimality and determinacy of the assignment if requested
 
     if args.optimize:
-        rules = load_rules(args.rules)
+        rules = active_rules(all_rules)
         opt = solve_optimal(cycle, rules, exclude=exclude, time_limit=args.time_limit)
         print(f"OPTIMAL: {opt.status}  value={opt.value}  ({opt.wall_time:.2f}s)")
         if opt.status == "optimal":
@@ -292,8 +320,8 @@ def main(argv: list[str] | None = None) -> None:
                 f"  contested, no submission: {len(contested_non)}   (score 0 anywhere; not evidence of discretion)"
             )
 
-            report["optimal"] = asdict(opt)
-            report["determinacy"] = det
+            report[OPTIMAL_KEY] = asdict(opt)
+            report[DETERMINACY_KEY] = det
             report["contested_submitters"] = contested_sub
             report["contested_non_submitters"] = contested_non
 
@@ -301,7 +329,7 @@ def main(argv: list[str] | None = None) -> None:
 
     runs = out_path(config, "runs")
     runs.mkdir(parents=True, exist_ok=True)
-    path = runs / f"{report['when'].replace(':', '')}_feasibility.json"
+    path = runs / f"{report['when'].replace(':', '')}{RUN_SUFFIX}.json"
     path.write_text(json.dumps(report, indent=2))
     print(f"\nwrote {path}")
 

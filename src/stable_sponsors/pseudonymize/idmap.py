@@ -3,7 +3,7 @@
 Holds config loading and the path guard, spreadsheet reading, normalisation,
 and every rule that decides whether two strings name the same person or the
 same course. Nothing here reads raw data on import, and every rule can be
-unit-tested without private data (tests/test_matching.py).
+unit-tested without private data (tests/pseudonymize/test_matching.py).
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-REPO_ROOT = (
-    Path(__file__).resolve().parents[3]
-)  # src/stable_sponsors/pseudonymize/idmap.py -> repo
+# src/stable_sponsors/pseudonymize/idmap.py -> repo
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_CONFIG = "config/pseudonymize.yaml"  # --config default for every entry point
 
 TITLES = {"mr", "mrs", "ms", "miss", "dr", "prof", "mx", "sir", "madam", "mme"}
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "phd", "edd", "md"}
@@ -241,16 +241,13 @@ def read_sheet(path: Path, sheet=None) -> pd.DataFrame:
     else:
         df = pd.read_csv(path, dtype=str)
     df.columns = [re.sub(r"\s+", " ", str(c)).strip() for c in df.columns]
-    dup = sorted({c for c in df.columns if list(df.columns).count(c) > 1})
+    dup = sorted(set(df.columns[df.columns.duplicated()]))
     if dup:
         raise SystemExit(
             f"{path.name}: duplicate column headers after trimming spaces: "
             f"{safe_headers(dup)}"
         )
-    df = df.fillna("").astype(str)
-    for c in df.columns:
-        df[c] = df[c].str.strip()
-    return df
+    return df.fillna("").astype(str).apply(lambda col: col.str.strip())
 
 
 def resolve_col(df: pd.DataFrame, want, label: str):
@@ -309,9 +306,8 @@ def norm_name(s) -> str:
     s = strip_accents(s).lower()
     s = re.sub(r"\(.*?\)|\[.*?\]", " ", s)
     s = s.replace("'", "")
-    s = "".join(
-        ch if (ch.isalpha() or ch in ",-. \t") else " " for ch in s
-    )  # any script
+    # isalpha() is true for letters in any script
+    s = "".join(ch if (ch.isalpha() or ch in ",-. \t") else " " for ch in s)
     if s.count(",") == 1:
         last, _, first = s.partition(",")
         s = f"{first} {last}"
@@ -345,6 +341,14 @@ def split_slot_tag(s) -> tuple[str, str]:
 def course_key(s) -> str:
     """Key for a course string on a form: the slot tag is not part of the course."""
     return norm_course(split_slot_tag(s)[0])
+
+
+def course_name_hash(name) -> str:
+    """6 hex digits from a normalised course name, for ids of courses with no trip code.
+
+    Derived from the name, not the row position, so re-sorting a sheet keeps the id.
+    """
+    return hashlib.sha1(norm_course(name).encode()).hexdigest()[:6]
 
 
 def norm_code(s) -> str:
@@ -386,8 +390,8 @@ def _name_keys(n: str):
             first[0] + rest[0],  # first part of a double surname
             first + "".join(t[0] for t in rest),  # surname-first: tanwm
             "".join(t[0] for t in rest) + first,  # wmtan
-            "".join(rest) + first,
-        }  # weimingtan
+            "".join(rest) + first,  # weimingtan
+        }
     weak -= strong
     return strong, weak
 

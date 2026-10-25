@@ -1,34 +1,37 @@
 from collections import Counter
 from pathlib import Path
 
-import pandas as pd
-
-from ortools.sat.python import cp_model
-
 from stable_sponsors.data import (
     ObservedPlacement,
-    _read_csv,
-    load_cycle,
     load_observed_placements,
 )
-from stable_sponsors.model import _solve, build_model, load_rules
-from stable_sponsors.pseudonymize.idmap import load_config, out_path
+from stable_sponsors.model import (
+    SOLVED,
+    _solve,
+    build_model,
+    load_cycle_from_config,
+    load_rules,
+)
+from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 from stable_sponsors.rules.context import Ctx
+
+CYCLE = 2027
+
+
+def _placed(observed) -> dict[str, str]:
+    """teacher_id -> course_id for each observed placement."""
+    return {p.teacher_id: p.course_id for p in observed}
 
 
 def force_observed(ctx: Ctx, observed: tuple[ObservedPlacement, ...]):
+    obs = _placed(observed)
     for (tid, cid), var in ctx.x.items():
-        placement = None
-        for t in observed:
-            if t.teacher_id == tid:
-                placement = t.course_id
-                break
-        ctx.model.add(var == int(placement == cid))
+        ctx.model.add(var == int(obs.get(tid) == cid))
 
 
 def violations(cycle, observed) -> dict[str, list]:
     """Check the observed allocation against each hard rule directly."""
-    obs = {p.teacher_id: p.course_id for p in observed}
+    obs = _placed(observed)
     courses = {c.course_id: c for c in cycle.courses}
     ranked = {(p.teacher_id, p.course_id) for p in cycle.preferences}
     submitters = {p.teacher_id for p in cycle.preferences}
@@ -46,26 +49,19 @@ def violations(cycle, observed) -> dict[str, list]:
     }
     for t in cycle.teachers:
         cid = obs.get(t.teacher_id)
-        if (
-            t.is_repeater
-            and t.incumbent_course_id is not None
-            and cid != t.incumbent_course_id
-        ):
+        incumbent = t.incumbent_course_id if t.is_repeater else None
+        if incumbent is not None and cid != incumbent:
             v["0 incumbency"].append(t.teacher_id)
         if cid is None:
             continue
         c = courses[cid]
         if not set(c.requires) <= set(t.qualifications):
             v["3 qualification"].append(t.teacher_id)
-        exempt = (
-            t.is_repeater
-            and t.incumbent_course_id is not None
-            and cid == t.incumbent_course_id
-        )
+        # a repeater placed in their incumbent course needn't have ranked it
         if (
             t.teacher_id in submitters
             and (t.teacher_id, cid) not in ranked
-            and not exempt
+            and cid != incumbent
         ):
             v["4 only_ranked"].append(t.teacher_id)
     for c in cycle.courses:
@@ -78,7 +74,7 @@ def violations(cycle, observed) -> dict[str, list]:
 
 
 def explain(cycle, observed, v):
-    obs = {p.teacher_id: p.course_id for p in observed}
+    obs = _placed(observed)
     teachers = {t.teacher_id: t for t in cycle.teachers}
     running = {c.course_id for c in cycle.courses if c.ran}
     kind = {c.course_id: c.course_type for c in cycle.courses}
@@ -122,9 +118,10 @@ def claim_scores(cycle, rules) -> dict[tuple[str, str], int]:
 
 
 def envy(cycle, rules, observed, v):
-    obs = {p.teacher_id: p.course_id for p in observed}
+    obs = _placed(observed)
     teachers = {t.teacher_id: t for t in cycle.teachers}
     running = {c.course_id for c in cycle.courses if c.ran}
+    submitters = {p.teacher_id for p in cycle.preferences}
     holders: dict[str, list[str]] = {}
     for tid, cid in obs.items():
         holders.setdefault(cid, []).append(tid)
@@ -137,23 +134,35 @@ def envy(cycle, rules, observed, v):
             return INCUMBENT
         return score.get((tid, cid), 0)  # 0 = didn't rank it
 
+    cases = set(v["4 only_ranked"]) | set(v["0 incumbency"])
+
+    def holder_kind(h):
+        if h in cases:
+            return "one of the 17"
+        if h not in submitters:
+            return "non-submitter"
+        return "ranked it lower"
+
     print("\nonly-ranked violations (wanted = ranked & running):")
+    kinds = Counter()
     for tid in v["4 only_ranked"]:
         wanted = [c for (t, c) in score if t == tid and c in running]
-        envious = [
-            c
+        # per wanted course: the holders whose claim to it is weaker than tid's
+        weaker = {
+            c: [h for h in holders.get(c, []) if claim(h, c) < claim(tid, c)]
             for c in wanted
-            if any(claim(h, c) < claim(tid, c) for h in holders.get(c, []))
-        ]
+        }
+        envious = [c for c in wanted if weaker[c]]
         print(
             f"  wanted={len(wanted)}  held by someone with a WEAKER claim={len(envious)}"
         )
+        kinds.update(holder_kind(h) for hs in weaker.values() for h in hs)
 
     print("\nincumbency violations (wanted = prior course):")
     for tid in v["0 incumbency"]:
         c = teachers[tid].incumbent_course_id
         hs = holders.get(c, [])
-        kinds = sorted(
+        kinds_of_holders = sorted(
             "incumbent"
             if claim(h, c) == INCUMBENT
             else "ranked it"
@@ -161,23 +170,8 @@ def envy(cycle, rules, observed, v):
             else "did NOT rank it"
             for h in hs
         )
-        print(f"  prior course now held by: {kinds}")
+        print(f"  prior course now held by: {kinds_of_holders}")
 
-    seventeen = set(v["4 only_ranked"]) | set(v["0 incumbency"])
-
-    def holder_kind(h, c):
-        if h in seventeen:
-            return "one of the 17"
-        if not any(p.teacher_id == h for p in cycle.preferences):
-            return "non-submitter"
-        return "ranked it lower"
-
-    kinds = Counter()
-    for tid in v["4 only_ranked"]:
-        for c in [c for (t, c) in score if t == tid and c in running]:
-            for h in holders.get(c, []):
-                if claim(h, c) < claim(tid, c):
-                    kinds[holder_kind(h, c)] += 1
     print("\nweaker-claim holders by kind:", dict(kinds))
 
     swaps = sum(
@@ -192,8 +186,8 @@ def envy(cycle, rules, observed, v):
 def score_observed(cycle, rules, observed, exclude=frozenset(), time_limit=30.0):
     ctx = build_model(cycle, rules, exclude)
     force_observed(ctx, observed)
-    solver, code = _solve(ctx, time_limit)
-    if code in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+    solver, code = _solve(ctx.model, time_limit)
+    if code in SOLVED:
         return "feasible", round(solver.objective_value)
     # Which hard rule does the real allocation break?
     hard_ids = [
@@ -203,59 +197,24 @@ def score_observed(cycle, rules, observed, exclude=frozenset(), time_limit=30.0)
     for i in hard_ids:
         c2 = build_model(cycle, rules, exclude | {i})
         force_observed(c2, observed)
-        if _solve(c2, time_limit)[1] in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        if _solve(c2.model, time_limit)[1] in SOLVED:
             broken.append(i)
     return "infeasible", broken
 
 
-if __name__ == "__main__":
-    config = load_config("config/pseudonymize.yaml")
+def main() -> None:
+    config = load_config(DEFAULT_CONFIG)
     rules = load_rules(Path("config/rules-2027.yaml"))
-    derived, params = out_path(config, "derived"), out_path(config, "params")
-    cycle = load_cycle(
-        derived,
-        params,
-        2027,
-        lineage_path=out_path(config, "key") / "course_lineage.csv",
-    )
+    derived = out_path(config, "derived")
+    cycle = load_cycle_from_config(config, CYCLE)
     observed = load_observed_placements(derived / "placements.csv", cycle)
 
-    # in compare.py __main__, after loading cycle and observed
-    pl = pd.read_csv(
-        derived / "placements.csv", dtype=str, skipinitialspace=True
-    ).apply(lambda c: c.str.strip())
-    placed_2026 = dict(
-        zip(
-            pl.loc[pl["cycle"] == "2026", "teacher_id"],
-            pl.loc[pl["cycle"] == "2026", "course_id"],
-        )
-    )
-    lin = _read_csv(out_path(config, "key") / "course_lineage.csv")
-    lineage = {
-        r.prior_course_id: (None if pd.isna(r.course_id) else r.course_id)
-        for r in lin.itertuples()
-    }
-    obs = {p.teacher_id: p.course_id for p in observed}
-
-    tally = Counter()
-    for t in cycle.teachers:
-        if not t.is_repeater:
-            continue
-        rec = placed_2026.get(t.teacher_id)
-        if rec is None:
-            tally["no 2026 placement on record"] += 1
-        elif rec == t.prior_course_id:
-            tally["self-report agrees with records"] += 1
-        else:
-            followed = obs.get(t.teacher_id) == lineage.get(rec)
-            tally[f"DISAGREE; 2027 placement follows records={followed}"] += 1
-    print(dict(tally))
-
-    print(score_observed(cycle, rules, observed, exclude=frozenset(), time_limit=30.0))
+    # Repeaters' self-reported prior course vs the 2026 placement records.
+    obs = _placed(observed)
 
     print(
         "observed teachers matched to cycle:",
-        len({p.teacher_id for p in observed} & {t.teacher_id for t in cycle.teachers}),
+        len(set(obs) & {t.teacher_id for t in cycle.teachers}),
         "of",
         len(observed),
     )
@@ -268,3 +227,7 @@ if __name__ == "__main__":
         )
     explain(cycle, observed, v)
     envy(cycle, rules, observed, v)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,33 +1,23 @@
 """Targeted regressions, one per defect found in review. Tiny hand-built datasets."""
 
-import sys
-from pathlib import Path
-
-import openpyxl
 import pandas as pd
 import pytest
 import yaml
-
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
+from make_synthetic import write_xlsx as xlsx
 
 import stable_sponsors.pseudonymize.apply_pseudonymization as s2
 import stable_sponsors.pseudonymize.build_crosswalk as s1
-from stable_sponsors.pseudonymize.idmap import CourseIndex, load_config
+from stable_sponsors.pseudonymize.idmap import (
+    CourseIndex,
+    is_placeholder_sponsor,
+    load_config,
+    norm_name,
+    safe_headers,
+)
+from stable_sponsors.pseudonymize.leakcheck import text_words
 from stable_sponsors.pseudonymize.sources import load_cycle
 
 D = "sas.edu.sg"
-
-
-def xlsx(path, header, rows):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Sheet1"
-    ws.append(header)
-    for r in rows:
-        ws.append(r)
-    wb.save(path)
 
 
 def mini(
@@ -61,9 +51,8 @@ def mini(
         ["IDN-SVC", "Bali Service", "Alan Abbott", "Carla Cruz"],
         ["NPL-TRK", "Nepal Trek", "Brian Baker", ""],
     ]
-    if (
-        coded_offerings is not None
-    ):  # [code, name, city, country]; code blank = did not run
+    # [code, name, city, country]; code blank = did not run
+    if coded_offerings is not None:
         xlsx(
             raw / "off.xlsx",
             ["Trip Code", "Course Name", "Arrival City", "Country"],
@@ -139,16 +128,27 @@ def mini(
     return load_config(cp)
 
 
+def _csv(path):
+    return pd.read_csv(path, dtype=str).fillna("")
+
+
 def confirm_all(cfg):
     for rel in (s1.ID_DRAFT, s1.ALIAS_DRAFT, s1.CAT_DRAFT):
         p = s1.out_path(cfg, rel)
-        df = pd.read_csv(p, dtype=str).fillna("")
+        df = _csv(p)
         df["confirmed"] = "y"
         df.to_csv(p, index=False)
 
 
+def confirm_and_build(cfg):
+    """Confirm every draft row, accept the key, and run stage 2."""
+    confirm_all(cfg)
+    s1.accept(cfg)
+    s2.run(cfg, quiet=True)
+
+
 def ids(cfg, rel=s1.ID_DRAFT):
-    df = pd.read_csv(s1.out_path(cfg, rel), dtype=str).fillna("")
+    df = _csv(s1.out_path(cfg, rel))
     return df, dict(zip(df["identifier"], df["teacher_id"]))
 
 
@@ -212,7 +212,7 @@ def test_codeless_course_ids_do_not_depend_on_row_order(tmp_path):
     assert a == b and len(set(a.values())) == 2
 
 
-def test_missing_header_row_does_not_print_personal_data(tmp_path, capsys):
+def test_missing_header_row_does_not_print_personal_data(tmp_path):
     cfg = mini(tmp_path)
     xlsx(
         tmp_path / "raw" / "C" / "r1.xlsx",
@@ -235,10 +235,8 @@ def test_missing_header_row_does_not_print_personal_data(tmp_path, capsys):
 def test_unknown_repeat_status_stays_unknown(tmp_path):
     cfg = mini(tmp_path, repeaters=False)  # Carla Cruz is placed with no form
     s1.run(cfg, quiet=True)
-    confirm_all(cfg)
-    s1.accept(cfg)
-    s2.run(cfg, quiet=True)
-    t = pd.read_csv(tmp_path / "derived/teachers.csv", dtype=str).fillna("")
+    confirm_and_build(cfg)
+    t = _csv(tmp_path / "derived/teachers.csv")
     _, m = ids(cfg, s1.ID_FINAL)
     carla = t[t.teacher_id == m["Carla Cruz"]].iloc[0]
     assert carla["placed_without_submission"] == "" and carla["is_repeater"] == ""
@@ -262,9 +260,7 @@ def test_two_addresses_for_one_teacher_give_one_list(tmp_path):
     )
     df.loc[row, "teacher_id"] = main
     df.to_csv(s1.out_path(cfg, s1.ID_DRAFT), index=False)
-    confirm_all(cfg)
-    s1.accept(cfg)
-    s2.run(cfg, quiet=True)
+    confirm_and_build(cfg)
     p = pd.read_csv(tmp_path / "derived/preferences.csv", dtype=str)
     assert len(p[p.teacher_id == main]) == 2
     c = pd.read_csv(tmp_path / "derived/checks.csv", dtype=str)
@@ -334,7 +330,7 @@ def test_confirmed_did_not_run_lock_is_challenged_when_course_appears(tmp_path):
         ],
     )
     s1.run(cfg, quiet=True)
-    al = pd.read_csv(s1.out_path(cfg, s1.ALIAS_DRAFT), dtype=str).fillna("")
+    al = _csv(s1.out_path(cfg, s1.ALIAS_DRAFT))
     fiji = al[(al.source == "offerings") & (al.raw_string == "Fiji Reef")].iloc[0]
     assert fiji["method"] == "LOCK_CONFLICT" and fiji["confirmed"] == ""
 
@@ -371,7 +367,7 @@ def test_numeric_codes_are_not_matched_inside_names():
 
 
 def _set(cfg, ident, **cols):
-    df = pd.read_csv(s1.out_path(cfg, s1.ID_DRAFT), dtype=str).fillna("")
+    df = _csv(s1.out_path(cfg, s1.ID_DRAFT))
     for c, v in cols.items():
         df.loc[df["identifier"] == ident, c] = v
     df.to_csv(s1.out_path(cfg, s1.ID_DRAFT), index=False)
@@ -447,7 +443,7 @@ def test_offering_conflict_reaches_form_strings_and_accept_blocks_orphans(tmp_pa
         ],
     )
     s1.run(cfg, quiet=True)
-    al = pd.read_csv(s1.out_path(cfg, s1.ALIAS_DRAFT), dtype=str).fillna("")
+    al = _csv(s1.out_path(cfg, s1.ALIAS_DRAFT))
     fiji = al[al.raw_string == "Fiji Reef"]
     assert set(fiji["method"]) == {"LOCK_CONFLICT"} and set(fiji["confirmed"]) == {""}
     assert set(fiji["conflict_with"]) == {"FJI-REF"}
@@ -455,12 +451,8 @@ def test_offering_conflict_reaches_form_strings_and_accept_blocks_orphans(tmp_pa
     al.loc[(al.raw_string == "Fiji Reef") & (al.source == "offerings"), "course_id"] = (
         "FJI-REF"
     )
-    al["confirmed"] = "y"
     al.to_csv(s1.out_path(cfg, s1.ALIAS_DRAFT), index=False)
-    for rel in (s1.ID_DRAFT, s1.CAT_DRAFT):
-        d = pd.read_csv(s1.out_path(cfg, rel), dtype=str).fillna("")
-        d["confirmed"] = "y"
-        d.to_csv(s1.out_path(cfg, rel), index=False)
+    confirm_all(cfg)
     with pytest.raises(SystemExit):
         s1.accept(cfg)
 
@@ -480,13 +472,13 @@ def test_confirmed_override_of_a_conflict_sticks(tmp_path):
     )
     s1.run(cfg, quiet=True)
     p = s1.out_path(cfg, s1.ALIAS_DRAFT)
-    al = pd.read_csv(p, dtype=str).fillna("")
+    al = _csv(p)
     row = al.raw_string == "Fiji Reef"
     al.loc[row, ["confirmed", "notes"]] = ["y", "office: different trip, keep NR"]
     al.to_csv(p, index=False)
     s1.run(cfg, quiet=True)
     s1.run(cfg, quiet=True)
-    al = pd.read_csv(p, dtype=str).fillna("")
+    al = _csv(p)
     r = al[al.raw_string == "Fiji Reef"].iloc[0]
     assert r["confirmed"] == "y" and r["method"] == "override_confirmed"
 
@@ -529,9 +521,7 @@ def test_latest_submission_wins_across_two_addresses(tmp_path):
     s1.run(cfg, quiet=True)
     _, m = ids(cfg)
     _set(cfg, f"alan.abbott@{D}", teacher_id=m[f"aabbott@{D}"], notes="same person")
-    confirm_all(cfg)
-    s1.accept(cfg)
-    s2.run(cfg, quiet=True)
+    confirm_and_build(cfg)
     pr = pd.read_csv(tmp_path / "derived/preferences.csv", dtype=str)
     got = (
         pr[pr.teacher_id == m[f"aabbott@{D}"]].sort_values("rank")["course_id"].tolist()
@@ -540,12 +530,6 @@ def test_latest_submission_wins_across_two_addresses(tmp_path):
 
 
 def test_header_masking_and_non_latin_names():
-    from stable_sponsors.pseudonymize.idmap import (
-        is_placeholder_sponsor,
-        norm_name,
-        safe_headers,
-    )
-
     shown = safe_headers(
         [
             "Email Address",
@@ -586,8 +570,8 @@ CODED = [
 
 
 def _drafts(cfg):
-    al = pd.read_csv(s1.out_path(cfg, s1.ALIAS_DRAFT), dtype=str).fillna("")
-    cat = pd.read_csv(s1.out_path(cfg, s1.CAT_DRAFT), dtype=str).fillna("")
+    al = _csv(s1.out_path(cfg, s1.ALIAS_DRAFT))
+    cat = _csv(s1.out_path(cfg, s1.CAT_DRAFT))
     return al, cat.set_index("course_id")
 
 
@@ -624,8 +608,8 @@ def test_coded_offering_contradictions_are_flagged(tmp_path):
             ["NPL-TRK", "Nepal Trek", "Kathmandu", "Nepal"],
             ["FJI-REF", "Fiji Reef", "Nadi", "Fiji"],  # code, no row
             ["", "Laos Weaving", "Luang Prabang", "Laos"],  # no code, has row
-            ["PER-TRK", "Peru Trek", "Cusco", "Peru"],
-        ],  # code, other name
+            ["PER-TRK", "Peru Trek", "Cusco", "Peru"],  # code, other name
+        ],
         placements=[
             ["IDN-SVC", "Bali Service", "Alan Abbott", ""],
             ["NPL-TRK", "Nepal Trek", "Brian Baker", ""],
@@ -688,14 +672,8 @@ def test_listed_singapore_course_missing_from_placements(tmp_path):
     assert film["course_id"] == "SING-2" and film["method"] == "GUESS_MISSING_SG_COURSE"
     assert cat.loc["SING-2", ["course_type", "ran"]].tolist() == ["sg", "unknown"]
     assert report["courses"]["C"]["missing"] == ["SING-2"]
-    confirm_all(cfg)
-    s1.accept(cfg)
-    s2.run(cfg, quiet=True)
-    c = (
-        pd.read_csv(tmp_path / "derived/courses.csv", dtype=str)
-        .fillna("")
-        .set_index("course_id")
-    )
+    confirm_and_build(cfg)
+    c = _csv(tmp_path / "derived/courses.csv").set_index("course_id")
     assert c.loc["SING-2", "ran"] == "" and c.loc["SING-1", "ran"] == "True"
     ch = pd.read_csv(tmp_path / "derived/checks.csv", dtype=str)
     assert (
@@ -716,14 +694,8 @@ def test_office_says_it_did_not_run(tmp_path):
     assert (
         cat.loc["SING-2", "ran"] == "n" and "MISSING" not in cat.loc["SING-2", "flags"]
     )
-    confirm_all(cfg)
-    s1.accept(cfg)
-    s2.run(cfg, quiet=True)
-    c = (
-        pd.read_csv(tmp_path / "derived/courses.csv", dtype=str)
-        .fillna("")
-        .set_index("course_id")
-    )
+    confirm_and_build(cfg)
+    c = _csv(tmp_path / "derived/courses.csv").set_index("course_id")
     assert c.loc["SING-2", "ran"] == "False"
 
 
@@ -753,9 +725,8 @@ def test_unconfigured_column_is_reported_and_ignore_cols_may_name_a_deleted_colu
     assert any("'Stray'" in n for n in report["notes"])
     mini(tmp_path, extra={})  # column deleted from the file...
     cfg = load_config(tmp_path / "cfg.yaml")
-    cfg["cycles"]["C"]["preferences"][0]["ignore_cols"] = [
-        "Stray"
-    ]  # ...but still listed
+    # ...but still listed
+    cfg["cycles"]["C"]["preferences"][0]["ignore_cols"] = ["Stray"]
     assert load_cycle(cfg, "C").extra_columns == []
 
 
@@ -767,14 +738,8 @@ def test_listed_course_nobody_ranked_still_appears_in_courses(tmp_path):
         extra={**SG_LIST, "not_run_codes": ["SING-2"]},
     )
     s1.run(cfg, quiet=True)
-    confirm_all(cfg)
-    s1.accept(cfg)
-    s2.run(cfg, quiet=True)
-    c = (
-        pd.read_csv(tmp_path / "derived/courses.csv", dtype=str)
-        .fillna("")
-        .set_index("course_id")
-    )
+    confirm_and_build(cfg)
+    c = _csv(tmp_path / "derived/courses.csv").set_index("course_id")
     assert c.loc["SING-2", ["course_type", "ran"]].tolist() == ["sg", "False"]
 
 
@@ -789,9 +754,9 @@ def test_no_code_offering_is_never_joined_by_containment_or_country(tmp_path):
         placements=[
             ["IDN-SVC", "Bali Service", "Alan Abbott", ""],
             ["LAO-WVG", "Laos Weaving Week", "Brian Baker", ""],  # contains it
-            ["FJI-DIV", "Fiji Diving", "Carla Cruz", ""],
+            ["FJI-DIV", "Fiji Diving", "Carla Cruz", ""],  # same country
         ],
-    )  # same country
+    )
     s1.run(cfg, quiet=True)
     al, _ = _drafts(cfg)
     off = al[al.source == "offerings"].set_index("raw_string")
@@ -807,9 +772,9 @@ def test_singapore_list_decides_type_and_flags_strays(tmp_path):
         placements=SG_PL
         + [
             ["SING-2", "Singapore Film", "Eve Evans", ""],  # nobody ranks it
-            ["SING-5", "Singapore Pottery", "Fay Fox", ""],
+            ["SING-5", "Singapore Pottery", "Fay Fox", ""],  # not listed
         ],
-    )  # not listed
+    )
     s1.run(cfg, quiet=True)
     _, cat = _drafts(cfg)
     assert cat.loc["SING-2", "type_evidence"] == "listed in expected_sg_codes"
@@ -850,14 +815,11 @@ def test_gender_slot_tags_map_to_one_course_and_are_kept(tmp_path):
     s1.run(cfg, quiet=True)
     al, _ = _drafts(cfg)
     intl = al[al.source == "intl"]
-    assert len(intl) == 2 and set(intl["method"]) == {
-        "exact_name"
-    }  # one row per course
-    confirm_all(cfg)
-    s1.accept(cfg)
-    s2.run(cfg, quiet=True)
+    # one row per course
+    assert len(intl) == 2 and set(intl["method"]) == {"exact_name"}
+    confirm_and_build(cfg)
     _, m = ids(cfg, s1.ID_FINAL)
-    pr = pd.read_csv(tmp_path / "derived/preferences.csv", dtype=str).fillna("")
+    pr = _csv(tmp_path / "derived/preferences.csv")
     alan = pr[pr.teacher_id == m[f"aabbott@{D}"]].sort_values("rank")
     assert alan[["course_id", "slot_gender"]].values.tolist() == [
         ["IDN-SVC", "male"],
@@ -865,11 +827,7 @@ def test_gender_slot_tags_map_to_one_course_and_are_kept(tmp_path):
     ]
     brian = pr[pr.teacher_id == m[f"bbaker@{D}"]].sort_values("rank")
     assert brian["slot_gender"].tolist() == ["female", ""]
-    te = (
-        pd.read_csv(tmp_path / "derived/teachers.csv", dtype=str)
-        .fillna("")
-        .set_index("teacher_id")
-    )
+    te = _csv(tmp_path / "derived/teachers.csv").set_index("teacher_id")
     assert te.loc[m[f"aabbott@{D}"], "slot_genders_ranked"] == "male"
     assert te.loc[m[f"ccruz@{D}"], "slot_genders_ranked"] == "female|male"
     ch = pd.read_csv(tmp_path / "derived/checks.csv", dtype=str)
@@ -877,8 +835,6 @@ def test_gender_slot_tags_map_to_one_course_and_are_kept(tmp_path):
 
 
 def test_leak_scan_ignores_hex_digests_but_not_names():
-    from stable_sponsors.pseudonymize.leakcheck import text_words
-
     w = text_words('"outputs": "93ce0f1ab2", code NR-3ce91a, ce, Facade')
     assert "ce" in w  # the standalone word is still caught
     assert "facade" in w  # all-letter words are never treated as hex

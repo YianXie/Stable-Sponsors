@@ -22,10 +22,10 @@ never deleted.
 import argparse
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
-from stable_sponsors.pseudonymize.idmap import load_config, out_path
+from stable_sponsors.data import read_csv
+from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 
 COURSE_COLS = [
     "cycle",
@@ -39,13 +39,6 @@ COURSE_COLS = [
     "status",
 ]
 TEACHER_COLS = ["cycle", "teacher_id", "qualifications", "gender", "source", "status"]
-
-
-def _read(path: Path) -> pd.DataFrame:
-    """Same parsing as data._read_csv: strings, stripped, blanks -> NaN."""
-    df = pd.read_csv(path, dtype=str, skipinitialspace=True)
-    df.columns = df.columns.str.strip()
-    return df.apply(lambda col: col.str.strip()).replace("", np.nan)
 
 
 def _for_cycle(df: pd.DataFrame, cycle: str) -> pd.DataFrame:
@@ -179,7 +172,7 @@ def _write(df: pd.DataFrame, path: Path) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    ap.add_argument("--config", default="config/pseudonymize.yaml")
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument("--cycle", required=True)
     ap.add_argument("--intl", default="2,2", help="min,max sponsors for intl courses")
     ap.add_argument("--sg", default="2,2", help="min,max sponsors for sg courses")
@@ -198,27 +191,21 @@ def main(argv: list[str] | None = None) -> None:
     params_dir = out_path(cfg, "params")
     params_dir.mkdir(parents=True, exist_ok=True)
 
-    courses = _read(derived / "courses.csv")
-    teachers = _read(derived / "teachers.csv")
-    preferences = _read(derived / "preferences.csv")
+    courses = read_csv(derived / "courses.csv")
+    teachers = read_csv(derived / "teachers.csv")
+    preferences = read_csv(derived / "preferences.csv")
     if args.cycle not in set(courses["cycle"]):
         raise SystemExit(f"cycle {args.cycle} not found in {derived / 'courses.csv'}")
 
+    course_draft = draft_course_params(courses, preferences, args.cycle, capacity)
+    teacher_draft = draft_teacher_params(teachers, args.cycle)
     jobs = [
-        (
-            "course_params.csv",
-            "course_id",
-            draft_course_params(courses, preferences, args.cycle, capacity),
-        ),
-        (
-            "teacher_params.csv",
-            "teacher_id",
-            draft_teacher_params(teachers, args.cycle),
-        ),
+        ("course_params.csv", "course_id", course_draft),
+        ("teacher_params.csv", "teacher_id", teacher_draft),
     ]
     for name, id_col, draft in jobs:
         path = params_dir / name
-        existing = _read(path) if path.exists() else None
+        existing = read_csv(path) if path.exists() else None
         merged, added, orphans = merge_keep_existing(
             draft, existing, id_col, args.cycle
         )
@@ -229,14 +216,15 @@ def main(argv: list[str] | None = None) -> None:
                 f"  WARNING: {len(orphans)} {id_col}s in file but not in derived/: {orphans}"
             )
 
-    c = jobs[0][2]
     print("\ncourse summary (new drafts only matter; kept rows are yours):")
-    print(f"  courses with a male slot:   {int(c['male_slots'].sum())}")
-    print(f"  courses with a female slot: {int(c['female_slots'].sum())}")
+    print(f"  courses with a male slot:   {int(course_draft['male_slots'].sum())}")
+    print(f"  courses with a female slot: {int(course_draft['female_slots'].sum())}")
     print(
-        f"  courses nobody ranked:      {c['source'].str.contains('nobody ranked').sum()}"
+        f"  courses nobody ranked:      {course_draft['source'].str.contains('nobody ranked').sum()}"
     )
-    flagged = c.loc[c["source"].str.contains("CHECK"), "course_id"].tolist()
+    flagged = course_draft.loc[
+        course_draft["source"].str.contains("CHECK"), "course_id"
+    ].tolist()
     if flagged:
         print(f"  CHECK (gendered slots exceed max): {flagged}")
     print(

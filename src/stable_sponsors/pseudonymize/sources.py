@@ -7,12 +7,12 @@ codes only, never a person, so console output is safe to share.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass, field
 
 from stable_sponsors.pseudonymize.idmap import (
     canon_header,
+    course_name_hash,
     is_null_pref,
     is_placeholder_sponsor,
     norm_course,
@@ -76,18 +76,34 @@ class Cycle:
     warnings: list = field(default_factory=list)
     inputs: dict = field(default_factory=dict)  # relative path -> sha256
     expected_sg_courses: int | None = None
-    expected_sg_codes: list | None = (
-        None  # Singapore trip codes that should all be in placements
-    )
-    not_run_codes: list = field(
-        default_factory=list
-    )  # office-confirmed: listed but did not run
+    # Singapore trip codes that should all be in placements
+    expected_sg_codes: list | None = None
+    # office-confirmed: listed but did not run
+    not_run_codes: list = field(default_factory=list)
     offerings_have_codes: bool = False
     n_continuation_rows: int = 0
 
 
 def _blank_row(r, cols) -> bool:
     return not any(r[c] for c in cols)
+
+
+def _rows_with_email(df, email_col, label, warnings):
+    """(spreadsheet row, row, normalised email) for every non-blank row.
+
+    A row with no usable address is skipped with a warning. This is a generator,
+    so the warning lands in order with any the caller adds for earlier rows.
+    """
+    for i, r in df.iterrows():
+        if _blank_row(r, df.columns):
+            continue
+        email = norm_email(r[email_col])
+        if not email:
+            warnings.append(
+                f"{label}: row {i + 2} has no usable email address; skipped"
+            )
+            continue
+        yield i + 2, r, email
 
 
 def _dedupe(rows, label, policy, warnings):
@@ -186,11 +202,8 @@ def load_cycle(cfg: dict, key: str) -> Cycle:
         rcs = [resolve_col(df, c, lab) for c in p["rank_cols"]]
         fcs = [resolve_col(df, c, lab) for c in p.get("freetext_cols") or []]
         # ignore_cols may name columns that have since been deleted from the file
-        ign = {
-            c
-            for c in df.columns
-            if canon_header(c) in {canon_header(x) for x in p.get("ignore_cols") or []}
-        }
+        ignore = {canon_header(x) for x in p.get("ignore_cols") or []}
+        ign = {c for c in df.columns if canon_header(c) in ignore}
         used = {ec, nc, *rcs, *fcs} | ign
         for c in df.columns:
             if c not in used:
@@ -199,15 +212,7 @@ def load_cycle(cfg: dict, key: str) -> Cycle:
                     cy.extra_columns.append((rnd, c, vals))
 
         rows, nulls = [], 0
-        for i, r in df.iterrows():
-            if _blank_row(r, df.columns):
-                continue
-            email = norm_email(r[ec])
-            if not email:
-                cy.warnings.append(
-                    f"{lab}: row {i + 2} has no usable email address; skipped"
-                )
-                continue
+        for row, r, email in _rows_with_email(df, ec, lab, cy.warnings):
             ranks = []
             for k, c in enumerate(rcs, 1):
                 v = r[c]
@@ -217,7 +222,7 @@ def load_cycle(cfg: dict, key: str) -> Cycle:
                 ranks.append((k, v))
             ft = {c: r[c] for c in fcs if r[c]}
             rows.append(
-                Response(rnd, ROUNDS[rnd], email, r[nc] if nc else "", ranks, ft, i + 2)
+                Response(rnd, ROUNDS[rnd], email, r[nc] if nc else "", ranks, ft, row)
             )
         if nulls:
             cy.warnings.append(
@@ -234,20 +239,12 @@ def load_cycle(cfg: dict, key: str) -> Cycle:
         ec = resolve_col(df, rp["email_col"], lab)
         pc = resolve_col(df, rp.get("prior_course_col"), lab)
         rows = []
-        for i, r in df.iterrows():
-            if _blank_row(r, df.columns):
-                continue
-            e = norm_email(r[ec])
-            if not e:
-                cy.warnings.append(
-                    f"{lab}: row {i + 2} has no usable email address; skipped"
-                )
-                continue
+        for row, r, email in _rows_with_email(df, ec, lab, cy.warnings):
             prior = r[pc] if pc else ""
             if pc and is_null_pref(prior):
-                cy.warnings.append(f"{lab}: row {i + 2} has no prior course")
+                cy.warnings.append(f"{lab}: row {row} has no prior course")
                 prior = ""
-            rows.append(Repeat(e, prior, i + 2))
+            rows.append(Repeat(email, prior, row))
         cy.repeaters = _dedupe(rows, lab, policy, cy.warnings)
 
     # ---- final placements (one row per course; extra rows = extra sponsors)
@@ -281,7 +278,7 @@ def load_cycle(cfg: dict, key: str) -> Cycle:
             cy.n_continuation_rows += 1
         elif not code:
             # id from the name, not the row position, so re-sorting the sheet keeps it
-            code = "NOCODE-" + hashlib.sha1(norm_course(cname).encode()).hexdigest()[:6]
+            code = "NOCODE-" + course_name_hash(cname)
             cy.warnings.append(
                 f"{lab}: row {i + 2} has a course name but no trip code; "
                 f"assigned {code}"

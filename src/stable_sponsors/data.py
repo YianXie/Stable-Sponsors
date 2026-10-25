@@ -1,3 +1,4 @@
+from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
@@ -7,6 +8,7 @@ import pandas as pd
 
 CourseType = Literal["intl", "sg"]
 SlotGender = Literal["male", "female"] | None
+ROUNDS = ("intl_r1", "intl_r2", "sg")
 
 
 @dataclass(frozen=True)
@@ -22,9 +24,9 @@ class Teacher:
         submitted_intl_r1 (bool): Indicates if the teacher submitted his/her preferences in the first international round.
         submitted_intl_r2 (bool): Indicates if the teacher submitted his/her preferences in the second international round.
         submitted_sg (bool): Indicates if the teacher submitted his/her preferences in the Singapore round.
-        slot_genders_ranked (SlotGender | None): The genders of the slots ranked by the teacher, if any.
+        slot_genders_ranked (str | None): The slot genders the teacher ranked, joined by "|" (e.g. "female|male"), if any.
         qualifications (tuple[str, ...]): The qualifications of the teacher, if any.
-        gender (SlotGender | None): The gender of the teacher, if any.
+        gender (SlotGender): The gender of the teacher, if any.
     """
 
     # From teachers.csv
@@ -36,11 +38,11 @@ class Teacher:
     submitted_intl_r1: bool
     submitted_intl_r2: bool
     submitted_sg: bool
-    slot_genders_ranked: SlotGender | None
+    slot_genders_ranked: str | None
 
     # From teacher_params.csv
     qualifications: tuple[str, ...] = ()
-    gender: SlotGender | None = None
+    gender: SlotGender = None
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ class Course:
         course_type (CourseType): The type of the course ("intl" or "sg").
         in_offerings (bool): Indicates if the course is in the offering list.
         ran (bool): Indicates if the course will be run.
-        country (str): The host country where the course is offered, or none if the course is domestic in Singapore.
+        country (str | None): The host country where the course is offered, or none if the course is domestic in Singapore.
         requires (tuple[str, ...]): The qualifications required for the course.
         min_sponsors (int | None): The minimum number of sponsors required for the course, or none if unspecified.
         max_sponsors (int | None): The maximum number of sponsors allowed for the course, or none if unspecified.
@@ -87,7 +89,7 @@ class Preference:
         round_id (str): The round of the preference (e.g., "intl_r1", "intl_r2", "sg").
         rank (int): The rank of the course in the teacher's preference list.
         course_id (str): The unique identifier for the course.
-        slot_gender (SlotGender | None): The gender of the course slot, or none if
+        slot_gender (SlotGender): The gender of the course slot, or none if the slot is not gendered.
     """
 
     cycle: int
@@ -105,7 +107,7 @@ class Cycle:
     Attributes:
         teachers (tuple[Teacher, ...]): A tuple of Teacher objects representing the teachers in the cycle.
         courses (tuple[Course, ...]): A tuple of Course objects representing the courses in the cycle.
-        preferences (tuple[Preference, ...]): A tuple of Preference objects representing the preferences
+        preferences (tuple[Preference, ...]): A tuple of Preference objects representing the preferences in the cycle.
     """
 
     teachers: tuple[Teacher, ...]
@@ -143,8 +145,6 @@ def _bool(v: Any) -> bool:
         bool: The boolean value.
     """
 
-    if isinstance(v, (bool, np.bool_)):
-        return bool(v)
     s = str(v).strip().lower()
     if s in {"true", "1"}:
         return True
@@ -153,11 +153,29 @@ def _bool(v: Any) -> bool:
     raise ValueError(f"not a boolean: {v!r}")
 
 
-def _read_csv(path: Path) -> pd.DataFrame:
+def _opt(v: Any) -> str | None:
+    """A cell as a string, or None if it is blank."""
+    return None if pd.isna(v) else str(v)
+
+
+def _opt_int(v: Any) -> int | None:
+    """A cell as an int, or None if it is blank."""
+    return None if pd.isna(v) else int(v)
+
+
+def _split(v: Any) -> tuple[str, ...]:
+    """A ";"-separated cell as a tuple of stripped items; () if it is blank."""
+    return () if pd.isna(v) else tuple(s.strip() for s in v.split(";"))
+
+
+def read_csv(path: Path) -> pd.DataFrame:
     """Read a CSV, stripping padding around headers and cells; blank cells become NaN.
 
     Args:
         path (Path): The path to the CSV file.
+
+    Raises:
+        ValueError: If two headers are the same once their padding is stripped.
 
     Returns:
         pd.DataFrame: The DataFrame containing the CSV data with stripped headers and cells, and blank cells replaced with NaN.
@@ -165,7 +183,43 @@ def _read_csv(path: Path) -> pd.DataFrame:
 
     df = pd.read_csv(path, dtype=str, skipinitialspace=True)
     df.columns = df.columns.str.strip()
+    dup = sorted(set(df.columns[df.columns.duplicated()]))
+    if dup:
+        raise ValueError(f"{path.name} has duplicate column headers {dup}")
     return df.apply(lambda col: col.str.strip()).replace("", np.nan)
+
+
+def read_lineage(path: Path, cycles: set[int]) -> dict[str, str | None]:
+    """Read the prior-year -> this-year course lineage for the given target cycles.
+
+    Lineage CSV columns: prior_course_id, course_id (blank = discontinued),
+    plus optional cycle (the target year) and prior_cycle, basis, status, note.
+
+    Args:
+        path (Path): the lineage CSV.
+        cycles (set[int]): keep only rows whose target cycle is one of these
+            (ignored when the file has no cycle column).
+
+    Raises:
+        ValueError: missing columns, or more than one row for a prior course.
+
+    Returns:
+        dict[str, str | None]: prior course ID -> this year's course ID (None when
+            the course was discontinued).
+    """
+
+    df = read_csv(path)
+    missing = {"prior_course_id", "course_id"} - set(df.columns)
+    if missing:
+        raise ValueError(f"{path.name} is missing columns {sorted(missing)}")
+    if "cycle" in df.columns:
+        df = df[df["cycle"].astype(int).isin(cycles)]
+
+    dupes = sorted(set(df.loc[df["prior_course_id"].duplicated(), "prior_course_id"]))
+    if dupes:
+        raise ValueError(f"{path.name} has more than one row for {dupes}")
+
+    return {str(r.prior_course_id): _opt(r.course_id) for r in df.itertuples()}
 
 
 def resolve_incumbency(
@@ -178,13 +232,10 @@ def resolve_incumbency(
     with no lineage row is an error, never a fallback to "same code", because
     that fallback is exactly how the bug this guards against happened.
 
-    Lineage CSV columns: prior_course_id, course_id (blank = discontinued),
-    plus optional cycle (the target year) and prior_cycle, basis, status, note.
-
     Args:
         teachers (tuple[Teacher, ...]): teachers of a single cycle.
         courses (tuple[Course, ...]): this cycle's courses, to validate targets.
-        path (Path): the lineage CSV.
+        path (Path): the lineage CSV (format: see read_lineage).
 
     Raises:
         ValueError: missing columns, duplicate rows, a target not in this cycle,
@@ -195,21 +246,7 @@ def resolve_incumbency(
             (None when their prior course was discontinued).
     """
 
-    df = _read_csv(path)
-    missing = {"prior_course_id", "course_id"} - set(df.columns)
-    if missing:
-        raise ValueError(f"{path.name} is missing columns {sorted(missing)}")
-    if "cycle" in df.columns:
-        df = df[df["cycle"].astype(int).isin({t.cycle for t in teachers})]
-
-    dupes = sorted(set(df.loc[df["prior_course_id"].duplicated(), "prior_course_id"]))
-    if dupes:
-        raise ValueError(f"{path.name} has more than one row for {dupes}")
-
-    lineage: dict[str, str | None] = {
-        str(r.prior_course_id): (None if pd.isna(r.course_id) else str(r.course_id))
-        for r in df.itertuples()
-    }
+    lineage = read_lineage(path, {t.cycle for t in teachers})
     course_ids = {c.course_id for c in courses}
     unknown = sorted(
         v for v in lineage.values() if v is not None and v not in course_ids
@@ -229,10 +266,36 @@ def resolve_incumbency(
     return tuple(out)
 
 
-def load_teachers(
-    path: Path,
+def resolve_incumbency_by_code(
+    teachers: tuple[Teacher, ...], courses: tuple[Course, ...]
 ) -> tuple[Teacher, ...]:
-    """Reads teacher data from a CSV file and returns a list of Teacher objects.
+    """The pre-lineage behaviour, kept only to reproduce runs from before the fix.
+
+    Matches each repeater's prior-year code against this year's catalogue by
+    code. This is the "same code" fallback resolve_incumbency refuses: a reused
+    code points at the wrong trip. A code missing from this year's catalogue
+    gives no incumbency.
+
+    Args:
+        teachers (tuple[Teacher, ...]): teachers of a single cycle.
+        courses (tuple[Course, ...]): this cycle's courses.
+
+    Returns:
+        tuple[Teacher, ...]: teachers with incumbent_course_id set for repeaters
+            whose prior code exists this year (None otherwise).
+    """
+
+    course_ids = {c.course_id for c in courses}
+    return tuple(
+        replace(t, incumbent_course_id=t.prior_course_id)
+        if t.is_repeater and t.prior_course_id in course_ids
+        else t
+        for t in teachers
+    )
+
+
+def load_teachers(path: Path) -> tuple[Teacher, ...]:
+    """Reads teacher data from a CSV file and returns a tuple of Teacher objects.
 
     Args:
         path (Path): The path to the CSV file containing teacher data.
@@ -241,33 +304,24 @@ def load_teachers(
         tuple[Teacher, ...]: A tuple of Teacher objects representing the teachers in the CSV file.
     """
 
-    teachers_df = _read_csv(path)
-
-    teachers_list = []
-    for _, row in teachers_df.iterrows():
-        teachers_list.append(
-            Teacher(
-                cycle=int(row["cycle"]),
-                teacher_id=str(row["teacher_id"]),
-                is_repeater=_bool(row["is_repeater"]),
-                prior_course_id=str(row["prior_course_id"])
-                if pd.notna(row["prior_course_id"])
-                else None,
-                incumbent_course_id=None,  # This will be resolved later using resolve_incumbency
-                submitted_intl_r1=_bool(row["submitted_intl_r1"]),
-                submitted_intl_r2=_bool(row["submitted_intl_r2"]),
-                submitted_sg=_bool(row["submitted_sg"]),
-                slot_genders_ranked=row["slot_genders_ranked"]
-                if pd.notna(row["slot_genders_ranked"])
-                else None,
-            )
+    return tuple(
+        Teacher(
+            cycle=int(r["cycle"]),
+            teacher_id=str(r["teacher_id"]),
+            is_repeater=_bool(r["is_repeater"]),
+            prior_course_id=_opt(r["prior_course_id"]),
+            incumbent_course_id=None,  # resolved later by resolve_incumbency
+            submitted_intl_r1=_bool(r["submitted_intl_r1"]),
+            submitted_intl_r2=_bool(r["submitted_intl_r2"]),
+            submitted_sg=_bool(r["submitted_sg"]),
+            slot_genders_ranked=_opt(r["slot_genders_ranked"]),
         )
-
-    return tuple(teachers_list)
+        for r in read_csv(path).to_dict("records")
+    )
 
 
 def load_courses(path: Path) -> tuple[Course, ...]:
-    """Reads course data from a CSV file and returns a list of Course objects.
+    """Reads course data from a CSV file and returns a tuple of Course objects.
 
     Args:
         path (Path): The path to the CSV file containing course data.
@@ -276,26 +330,21 @@ def load_courses(path: Path) -> tuple[Course, ...]:
         tuple[Course, ...]: A tuple of Course objects representing the courses in the CSV file.
     """
 
-    df = _read_csv(path)
-    courses_list = []
-
-    for _, row in df.iterrows():
-        courses_list.append(
-            Course(
-                cycle=int(row["cycle"]),
-                course_id=str(row["course_id"]),
-                course_type=row["course_type"],
-                in_offerings=_bool(row["in_offerings"]),
-                ran=_bool(row["ran"]),
-                country=row["country"] if pd.notna(row["country"]) else None,
-            )
+    return tuple(
+        Course(
+            cycle=int(r["cycle"]),
+            course_id=str(r["course_id"]),
+            course_type=r["course_type"],
+            in_offerings=_bool(r["in_offerings"]),
+            ran=_bool(r["ran"]),
+            country=_opt(r["country"]),
         )
-
-    return tuple(courses_list)
+        for r in read_csv(path).to_dict("records")
+    )
 
 
 def load_preferences(path: Path) -> tuple[Preference, ...]:
-    """Reads preference data from a CSV file and returns a list of Preference objects.
+    """Reads preference data from a CSV file and returns a tuple of Preference objects.
 
     Args:
         path (Path): The path to the CSV file containing preference data.
@@ -304,167 +353,153 @@ def load_preferences(path: Path) -> tuple[Preference, ...]:
         tuple[Preference, ...]: A tuple of Preference objects representing the preferences in the CSV file.
     """
 
-    df = _read_csv(path)
-    preferences_list = []
-
-    for _, row in df.iterrows():
-        preferences_list.append(
-            Preference(
-                cycle=int(row["cycle"]),
-                teacher_id=str(row["teacher_id"]),
-                round_id=str(row["round"]),
-                rank=int(row["rank"]),
-                course_id=str(row["course_id"]),
-                slot_gender=row["slot_gender"]
-                if pd.notna(row["slot_gender"])
-                else None,
-            )
+    return tuple(
+        Preference(
+            cycle=int(r["cycle"]),
+            teacher_id=str(r["teacher_id"]),
+            round_id=str(r["round"]),
+            rank=int(r["rank"]),
+            course_id=str(r["course_id"]),
+            slot_gender=_opt(r["slot_gender"]),
         )
+        for r in read_csv(path).to_dict("records")
+    )
 
-    return tuple(preferences_list)
+
+def _param_row(df: pd.DataFrame, id_col: str, id_: str, label: str, path: Path) -> dict:
+    """The single row of a params file for one ID.
+
+    Args:
+        df (pd.DataFrame): the params file, already filtered to one cycle.
+        id_col (str): the ID column ("teacher_id" or "course_id").
+        id_ (str): the ID to look up.
+        label (str): how errors name the ID, e.g. "Teacher ID".
+        path (Path): the params file, for errors.
+
+    Raises:
+        ValueError: If the ID has no row, or more than one.
+
+    Returns:
+        dict: the row, column -> cell.
+    """
+
+    rows = df[df[id_col] == id_]
+    if rows.empty:
+        raise ValueError(f"{label} {id_} not found in {path.name}.")
+    if len(rows) > 1:
+        raise ValueError(f"{label} {id_} has {len(rows)} rows in {path.name}.")
+    return rows.iloc[0].to_dict()
 
 
 def load_teacher_params(
     path: Path, teachers: tuple[Teacher, ...]
 ) -> tuple[Teacher, ...]:
-    """Reads teacher parameter data from a CSV file and returns a list of Teacher objects with updated qualifications and gender.
+    """Reads teacher parameter data from a CSV file and returns a tuple of Teacher objects with updated qualifications and gender.
 
     Args:
         path (Path): The path to the CSV file containing teacher parameter data.
         teachers (tuple[Teacher, ...]): A tuple of Teacher objects to be enriched with qualifications and gender from the CSV file.
 
+    Raises:
+        ValueError: If a teacher ID has no row, or more than one, in the CSV file.
+
     Returns:
         tuple[Teacher, ...]: A tuple of Teacher objects with updated qualifications and gender.
     """
 
-    df = _read_csv(path)
+    df = read_csv(path)
     df = df[df["cycle"].astype(int) == teachers[0].cycle]
 
     enriched_teachers = []
     for teacher in teachers:
-        if not teacher.teacher_id in df["teacher_id"].values:
-            raise ValueError(
-                f"Teacher ID {teacher.teacher_id} not found in teacher_params.csv."
-            )
-        teacher_qualifications = df.loc[
-            df["teacher_id"] == teacher.teacher_id, "qualifications"
-        ].item()
-        teacher_gender = df.loc[df["teacher_id"] == teacher.teacher_id, "gender"].item()
-        if pd.notna(teacher_qualifications):
-            qualifications = tuple(
-                str(q).strip()
-                for q in teacher_qualifications.strip().split(";")
-                if pd.notna(q)
-            )
-            teacher = replace(teacher, qualifications=qualifications)
-        if pd.notna(teacher_gender):
-            teacher = replace(teacher, gender=teacher_gender.strip())
+        r = _param_row(df, "teacher_id", teacher.teacher_id, "Teacher ID", path)
+        # A blank cell leaves the teacher's current value in place.
+        if pd.notna(r["qualifications"]):
+            teacher = replace(teacher, qualifications=_split(r["qualifications"]))
+        if pd.notna(r["gender"]):
+            teacher = replace(teacher, gender=r["gender"])
         enriched_teachers.append(teacher)
 
     return tuple(enriched_teachers)
 
 
 def load_course_params(path: Path, courses: tuple[Course, ...]) -> tuple[Course, ...]:
-    """Reads course parameter data from a CSV file and returns a list of Course objects with updated requirements, minimum and maximum sponsors, and male and female slots.
+    """Reads course parameter data from a CSV file and returns a tuple of Course objects with updated requirements, minimum and maximum sponsors, and male and female slots.
 
     Args:
         path (Path): The path to the CSV file containing course parameter data.
         courses (tuple[Course, ...]): A tuple of Course objects to be enriched with parameter data from the CSV file.
 
     Raises:
-        ValueError: If a course ID is not found in the CSV file.
+        ValueError: If a course ID has no row, or more than one, in the CSV file.
 
     Returns:
         tuple[Course, ...]: A tuple of Course objects with updated parameter data.
     """
 
-    df = _read_csv(path)
+    df = read_csv(path)
     df = df[df["cycle"].astype(int) == courses[0].cycle]
 
     enriched_courses = []
     for course in courses:
-        if not course.course_id in df["course_id"].values:
-            raise ValueError(
-                f"Course ID {course.course_id} not found in course_params.csv."
+        r = _param_row(df, "course_id", course.course_id, "Course ID", path)
+        enriched_courses.append(
+            replace(
+                course,
+                requires=_split(r["requires"]),
+                min_sponsors=_opt_int(r["min_sponsors"]),
+                max_sponsors=_opt_int(r["max_sponsors"]),
+                male_slots=_opt_int(r["male_slots"]),
+                female_slots=_opt_int(r["female_slots"]),
             )
-        course_requires = df.loc[df["course_id"] == course.course_id, "requires"].item()
-        if isinstance(course_requires, str):
-            course_requires = tuple(
-                str(r).strip()
-                for r in course_requires.strip().split(";")
-                if pd.notna(r)
-            )
-        else:
-            course_requires = ()
-        min_sponsors = df.loc[
-            df["course_id"] == course.course_id, "min_sponsors"
-        ].item()
-        max_sponsors = df.loc[
-            df["course_id"] == course.course_id, "max_sponsors"
-        ].item()
-        course_male_slots = df.loc[
-            df["course_id"] == course.course_id, "male_slots"
-        ].item()
-        course_female_slots = df.loc[
-            df["course_id"] == course.course_id, "female_slots"
-        ].item()
-        course = replace(
-            course,
-            requires=course_requires,
-            min_sponsors=int(min_sponsors.strip()) if pd.notna(min_sponsors) else None,
-            max_sponsors=int(max_sponsors.strip()) if pd.notna(max_sponsors) else None,
-            male_slots=int(course_male_slots.strip())
-            if pd.notna(course_male_slots)
-            else None,
-            female_slots=int(course_female_slots.strip())
-            if pd.notna(course_female_slots)
-            else None,
         )
-        enriched_courses.append(course)
 
     return tuple(enriched_courses)
 
 
 def load_observed_placements(path: Path, cycle: Cycle) -> tuple[ObservedPlacement, ...]:
-    """Reads observed placement data from a CSV file and returns a list of ObservedPlacement objects.
+    """Reads observed placement data from a CSV file and returns a tuple of ObservedPlacement objects.
+
+    Only rows with status "assigned" in the cycle's year are placements: the file
+    also holds empty sponsor slots (no teacher) and, in derived/, every cycle.
 
     Args:
         path (Path): The path to the CSV file containing observed placement data.
         cycle (Cycle): The Cycle object to which the observed placements belong.
 
+    Raises:
+        ValueError: If a teacher is placed twice, a sponsor slot is filled twice,
+            a placement names an unknown teacher or course, or the cycle has
+            duplicate teacher or course IDs.
+
     Returns:
         tuple[ObservedPlacement, ...]: A tuple of ObservedPlacement objects representing the observed placements in the CSV file.
     """
 
-    df = _read_csv(path)
-    placements_list: list[ObservedPlacement] = []
-
-    for _, row in df.iterrows():
-        placements_list.append(
-            ObservedPlacement(
-                cycle=int(row["cycle"]),
-                course_id=str(row["course_id"]),
-                sponsor_slot=int(row["sponsor_slot"]),
-                teacher_id=str(row["teacher_id"]),
-            )
+    df = read_csv(path)
+    df = df[df["status"] == "assigned"]
+    df = df[df["cycle"].astype(int).isin({t.cycle for t in cycle.teachers})]
+    placements = tuple(
+        ObservedPlacement(
+            cycle=int(r["cycle"]),
+            course_id=str(r["course_id"]),
+            sponsor_slot=int(r["sponsor_slot"]),
+            teacher_id=str(r["teacher_id"]),
         )
+        for r in df.to_dict("records")
+    )
 
-    teachers = cycle.teachers
-    courses = cycle.courses
-    placements = tuple(placements_list)
-
-    teacher_ids = {teacher.teacher_id for teacher in teachers}
-    course_ids = {course.course_id for course in courses}
+    teacher_ids = {teacher.teacher_id for teacher in cycle.teachers}
+    course_ids = {course.course_id for course in cycle.courses}
 
     # Test at most one placement row per teacher
-    placement_teacher_ids = {placement.teacher_id for placement in placements}
-    if len(placement_teacher_ids) != len(placements):
+    if len({p.teacher_id for p in placements}) != len(placements):
         raise ValueError("Duplicate teacher IDs found in placements.")
 
     # Test no duplicate teacher_id in teachers and no duplicate course ID in courses
-    if len(teacher_ids) != len(teachers):
+    if len(teacher_ids) != len(cycle.teachers):
         raise ValueError("Duplicate teacher IDs found in teachers.")
-    if len(course_ids) != len(courses):
+    if len(course_ids) != len(cycle.courses):
         raise ValueError("Duplicate course IDs found in courses.")
 
     # Test every placement’s teacher_id and course_id exists
@@ -479,10 +514,7 @@ def load_observed_placements(path: Path, cycle: Cycle) -> tuple[ObservedPlacemen
             )
 
     # Test no two placements share the same (course_id, sponsor_slot)
-    placement_pairs = {
-        (placement.course_id, placement.sponsor_slot) for placement in placements
-    }
-    if len(placement_pairs) != len(placements):
+    if len({(p.course_id, p.sponsor_slot) for p in placements}) != len(placements):
         raise ValueError(
             "Duplicate (course_id, sponsor_slot) pairs found in placements."
         )
@@ -491,11 +523,10 @@ def load_observed_placements(path: Path, cycle: Cycle) -> tuple[ObservedPlacemen
 
 
 def validate_cycle(cycle: Cycle) -> None:
-    """Validates the integrity of a Cycle object and its associated observed placements.
+    """Validates the integrity of a Cycle object.
 
     Args:
         cycle (Cycle): The Cycle object to validate.
-        observed_placements (tuple[ObservedPlacement]): A tuple of observed placements to validate against the cycle.
 
     Raises:
         ValueError: If any validation check fails.
@@ -543,42 +574,25 @@ def validate_cycle(cycle: Cycle) -> None:
             )
 
     # Test submitted_intl_r1 agrees with whether an intl_r1 ranking exists, and likewise for the other rounds
-    for teacher in teachers:
-        intl_r1_rankings = [
-            pref
-            for pref in preferences
-            if pref.teacher_id == teacher.teacher_id and pref.round_id == "intl_r1"
-        ]
-        intl_r2_rankings = [
-            pref
-            for pref in preferences
-            if pref.teacher_id == teacher.teacher_id and pref.round_id == "intl_r2"
-        ]
-        sg_rankings = [
-            pref
-            for pref in preferences
-            if pref.teacher_id == teacher.teacher_id and pref.round_id == "sg"
-        ]
-
-        if teacher.submitted_intl_r1 != (len(intl_r1_rankings) > 0):
-            raise ValueError(
-                f"Teacher ID {teacher.teacher_id} submitted_intl_r1 does not match the existence of intl_r1 rankings."
-            )
-        if teacher.submitted_intl_r2 != (len(intl_r2_rankings) > 0):
-            raise ValueError(
-                f"Teacher ID {teacher.teacher_id} submitted_intl_r2 does not match the existence of intl_r2 rankings."
-            )
-        if teacher.submitted_sg != (len(sg_rankings) > 0):
-            raise ValueError(
-                f"Teacher ID {teacher.teacher_id} submitted_sg does not match the existence of sg rankings."
-            )
-
-    # The round values are exactly {"intl_r1", "intl_r2", "sg"}
-    valid_rounds = {"intl_r1", "intl_r2", "sg"}
+    rounds_ranked: dict[str, set[str]] = defaultdict(set)
     for preference in preferences:
-        if preference.round_id not in valid_rounds:
+        rounds_ranked[preference.teacher_id].add(preference.round_id)
+    for teacher in teachers:
+        for round_id, submitted in (
+            ("intl_r1", teacher.submitted_intl_r1),
+            ("intl_r2", teacher.submitted_intl_r2),
+            ("sg", teacher.submitted_sg),
+        ):
+            if submitted != (round_id in rounds_ranked[teacher.teacher_id]):
+                raise ValueError(
+                    f"Teacher ID {teacher.teacher_id} submitted_{round_id} does not match the existence of {round_id} rankings."
+                )
+
+    # The round values are exactly ROUNDS
+    for preference in preferences:
+        if preference.round_id not in ROUNDS:
             raise ValueError(
-                f"Preference round_id {preference.round_id} is not one of the valid rounds: {valid_rounds}."
+                f"Preference round_id {preference.round_id} is not one of the valid rounds: {ROUNDS}."
             )
 
 
@@ -587,6 +601,7 @@ def load_cycle(
     params_dir: Path | None = None,
     cycle: int | None = None,
     lineage_path: Path | None = None,
+    use_lineage: bool = True,
 ) -> Cycle:
     """Loads a cycle of teacher-course preferences from CSV files in the specified directory.
 
@@ -595,6 +610,7 @@ def load_cycle(
         params_dir (Path | None, optional): An optional path to the directory containing parameter CSV files. If not provided, it defaults to the base path.
         cycle (int | None, optional): Keep only rows for this cycle. derived/ holds every cycle in the same files, so pass this for real data. None keeps all rows (fine for single-cycle fixtures).
         lineage_path (Path | None, optional): The prior-year -> this-year course lineage CSV. Defaults to params_dir / "course_lineage.csv".
+        use_lineage (bool, optional): False disables the lineage fix: repeaters are matched to this year's courses by code (resolve_incumbency_by_code) and lineage_path is not read. Only for reproducing pre-fix runs. Defaults to True.
 
     Returns:
         Cycle: An instance of the Cycle class containing teachers, courses, and preferences.
@@ -605,7 +621,7 @@ def load_cycle(
 
     params_dir = params_dir or base
 
-    if not base.exists() or not base.is_dir():
+    if not base.is_dir():
         raise ValueError(
             f"The specified base path '{base}' does not exist or is not a directory."
         )
@@ -620,9 +636,12 @@ def load_cycle(
         preferences = tuple(p for p in preferences if p.cycle == cycle)
 
     # Resolve after filtering: lineage maps one prior year into one target year.
-    teachers = resolve_incumbency(
-        teachers, courses, lineage_path or params_dir / "course_lineage.csv"
-    )
+    if use_lineage:
+        teachers = resolve_incumbency(
+            teachers, courses, lineage_path or params_dir / "course_lineage.csv"
+        )
+    else:
+        teachers = resolve_incumbency_by_code(teachers, courses)
     teachers = load_teacher_params(params_dir / "teacher_params.csv", teachers)
     courses = load_course_params(params_dir / "course_params.csv", courses)
 

@@ -7,22 +7,20 @@ to key/leakage_allowlist.txt rather than weakening this test.
 """
 
 import os
-import sys
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
 from stable_sponsors.pseudonymize.idmap import (
+    DEFAULT_CONFIG,
     REPO_ROOT,
     load_config,
     out_path,
 )
 from stable_sponsors.pseudonymize.leakcheck import find_leaks
 
-CONFIG = Path(os.environ.get("PSEUDO_CONFIG", ROOT / "config/pseudonymize.yaml"))
+CONFIG = Path(os.environ.get("PSEUDO_CONFIG", REPO_ROOT / DEFAULT_CONFIG))
 
 
 @pytest.fixture(scope="module")
