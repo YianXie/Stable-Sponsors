@@ -2,19 +2,31 @@
 
 |                       |                                                                                  |
 | --------------------- | -------------------------------------------------------------------------------- |
-| **Report version**    | v2.1 (draft)                                                                     |
-| **Date**              | 2026-10-24                                                                       |
+| **Report version**    | v2.3                                                                             |
+| **Date**              | 2026-10-25                                                                       |
 | **Author**            | Ian Xie                                                                          |
 | **Research question** | RQ1: Do the documented and assumed rules reproduce the office's real placements? |
-| **Code version**      | commit `5619b80`                                                                 |
-| **Rule spec**         | `config/rules-2027.yaml` @ commit `5619b80`                                      |
+| **Code version**      | commit `7dd2886`                                                                 |
+| **Rule spec**         | `config/rules-2027.yaml` @ commit `8445d50`                                      |
 | **Cycle**             | 2027 Interim Semester                                                            |
+
+---
+
+## 0. Since we last met (23 September)
+
+- **Plan revised (v1.1, 15 Oct).** Two data cycles: 2027 is the reproduction target and 2026 a holdout, run once with the rules frozen. Cut: inverse optimization, the student-mechanism appendix and the exhibition frontend. Deferred acceptance is now optional. The schedule slipped about four weeks; fall break and the cuts recover it, and the presentation date is unchanged.
+- **Data pipeline built and frozen.** Two-stage pseudonymization with human-confirmed identity links. Real data stays on my machine; this report contains only counts, rule IDs, trip codes and pseudonymous IDs.
+- **Procedure formalized.** I wrote down my own understanding of the procedure, then classified every difference (diff categories A–E, §4). Each of the 11 rules now carries a class (hard / priority / tie-break) and a status (documented / assumed / deferred).
+- **Reproduction v1 (this report).** CP-SAT model of the rules, run on the real 2027 inputs and compared with the office's placements. Because no tie-break is documented, agreement is measured only over teachers whose placement is the same in every optimal solution ("determined", §5.3).
+- **Next.** Meet the office on the residual cases, run the 2026 holdout, then move to RQ2 (comparing utilitarian, leximin and coverage objectives).
+
+**What I'd like your advice on:** With many tied optima, is "determined and matches the office" a sound reproduction measure, or is there an established alternative (e.g. checking whether the office's allocation is optimal under some weighting)?
 
 ---
 
 ## 1. Summary
 
-Encoded 8 rules (6 hard, 2 priority, 2 deferred, 1 tie-break set to none) from the office's procedure, interviews, and my own assumptions. The model reproduces 53/138 (38.4%) of all teachers' allocation exactly, given condition of which course ran (before lineage fix). After fix, the model reproduced 48/138 (34.8%) office's allocation, 81 determined, 46 contested submitters, and 11 contested non-submitters out of the 138 teachers and 78 courses. The residual is concentrated on unencoded rules, data mapping errors, and discretion. The main caveat among rules that are encoded is that rule 10 uses an outcome as an input.
+Encoded 11 rules (8 applied: 6 hard and 2 priority; 2 deferred; 1 tie-break set to none) from the office's procedure, interviews, and my own assumptions. The model reproduces 53/138 (38.4%) of all teachers' allocation exactly, given condition of which course ran (before lineage fix). After fix, the model reproduced 48/138 (34.8%) office's allocation, 81 determined, 46 contested submitters, and 11 contested non-submitters out of the 138 teachers and 78 courses. The residual is concentrated on unencoded rules, data mapping errors, and discretion. The main caveat among rules that are encoded is that rule 10 uses an outcome as an input.
 
 **Answer to RQ1 in one line:** No, not yet: the structure matches only by construction, and among the placements the rules pin down, 59% match the office.
 
@@ -87,7 +99,7 @@ that the rules are right. Every result below is tagged as one or the other.
 
 - Real data stays on the author's machine under `private_root`. This report contains only counts, rule IDs and pseudonymous IDs.
 - Pseudonymization: two-stage crosswalk with human review (see `docs/pseudonymization.md`). Leak check result on `derived/`: pass, 2026-10-24.
-- Course codes are per-year. A lineage table (`key/course_lineage.csv`, 2026 code → 2027 code) was added during this test. See Finding 1.
+- Course codes are per-year. A lineage table (`key/course_lineage.csv`, 2026 code → 2027 code) was added during this test. See Finding 2.
 
 ### 3.5 Known data limitations
 
@@ -99,22 +111,24 @@ that the rules are right. Every result below is tagged as one or the other.
 
 ## 4. Rules as encoded
 
-Sources: D-xxx = `procedure-doc-rules-v1.0.md`, M-xxx = `my-understanding-of-rules-v2.0.md`,
-diff categories A–E = `procedure-diff-v1.1.md`.
+Sources (copied from the `source` field in `config/rules-2027.yaml`): "Procedure §x" is a section of the office's
+Faculty Sponsor Allocation Procedure (`procedure-doc-rules-v1.0.md`); "diff n" is row n of `procedure-diff-v1.1.md`,
+with its category in brackets: A = in both and agree, A\* = implied in the document, B = in the document only,
+C = in my understanding only, E = in neither but needed to run the allocation.
 
-| ID  | Rule                     | Class    | Status     | Source          | Applied in v1?         | Note                                                                                                                      |
-| --- | ------------------------ | -------- | ---------- | --------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| 0   | incumbency_preassignment | hard     | documented | doc             | yes                    | Repeater pinned to this year's code of their prior course (via lineage). Skipped if discontinued.                         |
-| 1   | rank_preference          | priority | documented | doc             | yes                    | Weights 7..1. Best rank across rounds.                                                                                    |
-| 2   | past_experience          | priority | deferred   | doc             | no                     | Not implemented.                                                                                                          |
-| 3   | qualification_required   | hard     | documented | doc & interview | yes (vacuous)          | No requirements coded yet.                                                                                                |
-| 4   | only_ranked_courses      | hard     | assumed    | assumed         | yes                    | Submitters only. Incumbent course counts as ranked (**amended after seeing outcomes**, see 4.1).                          |
-| 5   | slot_gender              | hard     | deferred   | doc & interview | no                     | No gender data.                                                                                                           |
-| 6   | round_precedence         | priority | assumed    | doc             | yes                    | Bonus intl_r1 = 20, intl_r2 = 10, sg = 0. Order inferred from form sequence.                                              |
-| 7   | tie_break                | tiebreak | none       | assumed         | n/a                    | Ties measured by `determinacy`, not broken.                                                                               |
-| 8   | one_course_per_teacher   | hard     | assumed    | assumed         | yes                    |                                                                                                                           |
-| 9   | course_capacity          | hard     | assumed    | assumed         | yes                    | min·y ≤ Σx ≤ max·y                                                                                                        |
-| 10  | courses_run_as_observed  | hard     | assumed    | —               | conditional model only | **Uses an outcome as an input.** Only legitimate if the office confirms the course list is set before sponsor allocation. |
+| ID  | Rule                     | Class    | Status     | Source                                                                   | Applied in v1?         | Note                                                                                                                      |
+| --- | ------------------------ | -------- | ---------- | ------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 0   | incumbency_preassignment | hard     | documented | Procedure §2.1; diff 0 (A)                                               | yes                    | Repeater pinned to this year's code of their prior course (via lineage). Skipped if discontinued.                         |
+| 1   | rank_preference          | priority | documented | Procedure §2.2; diff 1 (A\*)                                             | yes                    | Weights 7..1. Best rank across rounds.                                                                                    |
+| 2   | past_experience          | priority | deferred   | Procedure §3.2; diff 3 (A)                                               | no                     | Not implemented.                                                                                                          |
+| 3   | qualification_required   | hard     | documented | Procedure §3.3; diff 5 (A)                                               | yes (vacuous)          | No requirements coded yet.                                                                                                |
+| 4   | only_ranked_courses      | hard     | assumed    | diff 13 (E)                                                              | yes                    | Submitters only. Incumbent course counts as ranked (**amended after seeing outcomes**, see 4.1).                          |
+| 5   | slot_gender              | hard     | deferred   | diff 7 (C): seen in form suffixes, not in procedure                      | no                     | No gender data.                                                                                                           |
+| 6   | round_precedence         | priority | assumed    | none recorded; order assumed from the form sequence                      | yes                    | Bonus intl_r1 = 20, intl_r2 = 10, sg = 0. Order inferred from form sequence.                                              |
+| 7   | tie_break                | tiebreak | none       | diff 10 (B)                                                              | n/a                    | Ties measured by `determinacy`, not broken.                                                                               |
+| 8   | one_course_per_teacher   | hard     | assumed    | diff 14 (E)                                                              | yes                    |                                                                                                                           |
+| 9   | course_capacity          | hard     | assumed    | diff 12 (E)                                                              | yes                    | min·y ≤ Σx ≤ max·y                                                                                                        |
+| 10  | courses_run_as_observed  | hard     | assumed    | inferred from run 2026-10-18 (8 submitters unplaced; course sets differ) | conditional model only | **Uses an outcome as an input.** Only legitimate if the office confirms the course list is set before sponsor allocation. |
 
 Objective: maximize Σ (rank weight + round bonus) · x.
 
@@ -168,13 +182,13 @@ Hard rules are constraints. Priority rules make up the objective.
 
 ### 6.1 Feasibility, optimum and determinacy
 
-| Run                           | Feasible | Optimum | Solve time | Determined | Contested (submitters) | Contested (non-submitters) | Placed | Courses run | Notes                                  |
-| ----------------------------- | -------- | ------- | ---------- | ---------- | ---------------------- | -------------------------- | ------ | ----------- | -------------------------------------- |
-| R1 unconstrained, pre-lineage | yes      | 2419    | 0.09 s     | 111        | 18                     | 9                          | 137    | 68          | Replay round, ran with `--lineage-fix` |
-| R2 conditional, pre-lineage   | yes      | 2194    | 0.03 s     | 99         | 30                     | 9                          | 131    | 65          | Replay round, ran with `--lineage-fix` |
-| R3 conditional, post-lineage  | yes      | 2224    | 0.03 s     | 81         | 46                     | 11                         | 131    | 65          | -                                      |
+| Run                           | Feasible | Optimum | Solve time | Determined | Contested (submitters) | Contested (non-submitters) | Placed | Courses run | Notes                           |
+| ----------------------------- | -------- | ------- | ---------- | ---------- | ---------------------- | -------------------------- | ------ | ----------- | ------------------------------- |
+| R1 unconstrained, pre-lineage | yes      | 2419    | 0.09 s     | 111        | 18                     | 9                          | 137    | 68          | Replay, ran with `--no-lineage` |
+| R2 conditional, pre-lineage   | yes      | 2194    | 0.03 s     | 99         | 30                     | 9                          | 131    | 65          | Replay, ran with `--no-lineage` |
+| R3 conditional, post-lineage  | yes      | 2224    | 0.03 s     | 81         | 46                     | 11                         | 131    | 65          | -                               |
 
-Interpretation: a 46 / 104 (44.2%) contested submitter count shows that some teacher allocations are ambiguous and require better rule encoding and/or discretion. The number of repeaters remains the same between 2 rounds (both 28).
+Interpretation: a 46 / 104 (44.2%) contested submitter count shows that some teacher allocations are ambiguous and require better rule encoding and/or discretion. The number of repeaters decreased from R2 to R3 (28 → 25).
 
 **Course set (R1 unconstrained vs office):** 8 model-only, 5 office-only. The model aims to fill as many course slots as possible to reach a higher score.
 
@@ -184,13 +198,13 @@ Interpretation: a 46 / 104 (44.2%) contested submitter count shows that some tea
 
 All 131 observed placements matched to teachers and courses.
 
-| Rule            | Violations | By construction?  | Note                                              |
-| --------------- | ---------- | ----------------- | ------------------------------------------------- |
-| 0 incumbency    | 3          | no                | See 6.4                                           |
-| 3 qualification | 0          | **yes (vacuous)** | No requirements coded                             |
-| 4 only ranked   | 12         | no                | See 6.3                                           |
-| 9 capacity 2–2  | 0          | **partly**        | PHIL-4's 3 sponsor slots is fixed by construction |
-| 10 course set   | 0          | **yes**           | Fixed by construction                             |
+| Rule                         | Violations | By construction?  | Note                                              |
+| ---------------------------- | ---------- | ----------------- | ------------------------------------------------- |
+| 0 incumbency                 | 3          | no                | See 6.4                                           |
+| 3 qualification              | 0          | **yes (vacuous)** | No requirements coded                             |
+| 4 only ranked                | 12         | no                | See 6.3                                           |
+| 9 capacity (2–2; PHIL-4 3–3) | 0          | **partly**        | PHIL-4's 3 sponsor slots is fixed by construction |
+| 10 course set                | 0          | **yes**           | Fixed by construction                             |
 
 ### 6.3 Residuals: placements into unranked courses (rule 4, n = 12)
 
@@ -244,8 +258,8 @@ Data: prior-course column suspected wrong; pending 2026 audit.
 ## 7. Findings
 
 1. **Determined teachers can (and often are) allocated to other courses.** 33 (29 different course, 4 unplaced) out of 81 teachers where the rules give a unique answer were allocated elsewhere. This could mean wrong rule 1 and 6 weights, unencoded rules (skills & partner preference), and discretion.
-2. **Course codes are per-year; multi-year analysis needs a lineage table.** 4 of the 5 initial incumbency violations were this pipeline artefact, and courses may get cancelled each year due to lack of sponsors (Q5).
-3. **The set of running courses appears to be fixed before sponsor allocation.** There are a total of 138 teachers and 78 courses, but only 131 were allocated and 65 ran. This explains _how many_ teachers go unplaced, not _which_. Status: inference, pending office confirmation.
+2. **Course codes are per-year; multi-year analysis needs a lineage table.** 4 of the 5 initial incumbency violations were this pipeline artefact.
+3. **The set of running courses appears to be fixed before sponsor allocation.** There are a total of 138 teachers and 78 courses, but only 131 were allocated and 65 ran. This explains _how many_ teachers go unplaced, not _which_. Alternative explanation: courses are cancelled because too few sponsors chose them (Q5). Test (`course_set_check`): if unplaced teachers ranked a course that did not run, and there were enough of them to staff it, it was not cancelled for lack of sponsors. Result: 8 / 13 unrun courses were ranked by at least one unplaced teacher, and 3 of them had enough sponsors to staff. Status: inference, pending office confirmation.
 4. **Rules changed after seeing outcomes:** rule 4 (n = 1), rule 9 (PHIL-4 has 3 sponsors), and rule 10. See 4.1.
 
 ---
@@ -295,7 +309,7 @@ Data: prior-course column suspected wrong; pending 2026 audit.
 
 ## 10. Conclusion and next step
 
-The encoded and assumed rules are partially enough to reproduce the office's allocation result. All hard rules can be satisfied by the model, but not by the observed placements. Exact allocation also differs between the model and the office. The rule set is good enough to use as a baseline for RQ2 after the rule-6 sensitivity check passed and the office answered the questions, and after the determined-mismatch count falls below 20 (33 - 3 repeaters - **assumed** 10 discretion cases).
+The encoded rules are not yet enough to reproduce the office's allocation result, and the structure matches only by construction. All hard rules can be satisfied by the model, but not by the observed placements. Exact allocation also differs between the model and the office. The rule set is good enough to use as a baseline for RQ2 after the rule-6 sensitivity check passed, the office answered the questions, the determined-mismatch count falls below 20 (33 - 3 repeaters - **assumed** 10 discretion cases, a working target set after seeing the 33), and the tuned weights pass on 2026 data.
 
 ---
 

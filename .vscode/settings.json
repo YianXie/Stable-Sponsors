@@ -13,6 +13,8 @@
     "pseudonymize",
     "pytest",
     "timespec",
-    "unranked"
-  ]
+    "unranked",
+    "unrun"
+  ],
+  "markdown.validate.enabled": false
 }
