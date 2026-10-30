@@ -96,10 +96,6 @@ uv run pytest tests/rules/test_hard_rules.py -v
 
 CI runs the same checks on GitHub Actions. Tests that need real data, such as `test_leakage.py`, skip when there is no local config. The end-to-end pipeline test runs on synthetic data from `tools/make_synthetic.py`.
 
-## Useful links
-
-My Catalyst master folder (including interviews audio recordings): [link](https://drive.google.com/drive/folders/1y8cW-x7qDw5BVXnOkVl5IMHvQPqsVjTZ?usp=sharing)
-
 ## License
 
 [MIT](LICENSE) © 2026 Yian Xie
