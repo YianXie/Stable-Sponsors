@@ -12,10 +12,12 @@ Only "determined and match" is evidence that the rules reproduce the office. For
 the run JSON holds one optimal solution picked arbitrarily by the solver, so whether it matches is
 reported but means nothing on its own.
 
+Determined mismatches are then sorted into the categories in ``classify_mismatches``.
+
 Console output is counts only. ``--list`` adds T### IDs (allowed by the privacy rule), never names.
 
-    uv run python -m stable_sponsors.reproduction                 # latest run with determinacy
-    uv run python -m stable_sponsors.reproduction --run PATH --list
+    uv run python -m stable_sponsors.review                 # latest run with determinacy
+    uv run python -m stable_sponsors.review --run PATH --list
 """
 
 import argparse
@@ -24,12 +26,13 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from stable_sponsors.data import Teacher, read_csv
+from stable_sponsors.data import Preference, Teacher, read_csv
 from stable_sponsors.model import (
     DETERMINACY_KEY,
     OPTIMAL_KEY,
     RUN_SUFFIX,
     load_cycle_from_config,
+    load_rules,
 )
 from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 
@@ -122,7 +125,7 @@ def score(
                 office_unplaced_kind(
                     model[tid], determined[tid], tid in contested_submitters
                 )
-            ] += 1
+            ] += 1  # type: ignore
         if model[tid] == o:
             cells[(d, "match")].append(tid)
         else:
@@ -158,6 +161,102 @@ def score(
     }
 
 
+RANK_RULE, ROUND_RULE = 1, 6  # rank_preference, round_precedence
+INCUMBENT_CLAIM = (
+    10**6
+)  # a repeater's claim to their incumbent course beats any ranking
+
+MISMATCH_CATEGORIES = (
+    "repeater not on old course",
+    "placed in unranked course",
+    "non-submitter ahead of submitter",
+    "unexplained tie",
+    "other",
+)
+
+
+def claim_scores(
+    preferences: tuple[Preference, ...], rules: list[dict], excluded: list[int]
+) -> dict[tuple[str, str], int]:
+    """(teacher_id, course_id) -> what placing the teacher there adds to the objective.
+
+    Same scoring as rules 1 and 6: weight of the best rank plus bonus of the best round, so a
+    course ranked in two rounds gets both bests. Only ranked pairs are keys; unranked score 0.
+    """
+    params = {r["id"]: r["params"] for r in rules if r["id"] not in excluded}
+    weights = params.get(RANK_RULE, {}).get("weights")
+    bonus = params.get(ROUND_RULE, {}).get("bonus")
+    best_rank: dict[tuple[str, str], int] = {}
+    best_bonus: dict[tuple[str, str], int] = {}
+    for p in preferences:
+        k = (p.teacher_id, p.course_id)
+        best_rank[k] = min(best_rank.get(k, p.rank), p.rank)
+        best_bonus[k] = max(best_bonus.get(k, 0), bonus[p.round_id] if bonus else 0)
+    return {
+        k: (weights[r - 1] if weights else 0) + best_bonus[k]
+        for k, r in best_rank.items()
+    }
+
+
+def classify_mismatches(
+    ids: list[str],
+    model: Assignment,
+    office: Assignment,
+    teachers: tuple[Teacher, ...],
+    scores: dict[tuple[str, str], int],
+) -> dict[str, list[str]]:
+    """Sort mismatched teachers into MISMATCH_CATEGORIES, each into the first one that fits.
+
+    1. A repeater with an incumbent course (one discontinued this year doesn't count).
+    2. A submitter placed by the office or the model in a course they didn't rank.
+    3. Either side of an office placement where a non-submitter holds a seat on a course that a
+       submitter ranked and would score more on than where the office put them (unplaced
+       scores 0). A repeater holding their own incumbent course is not "ahead".
+    4. The teacher scores the same on the office's and the model's placement (unplaced
+       scores 0), so the encoded rules don't say which one is better for them.
+    5. Anything else.
+
+    ``scores`` comes from ``claim_scores``; its keys also tell who submitted and what they ranked.
+    """
+    incumbent = {
+        t.teacher_id: t.incumbent_course_id
+        for t in teachers
+        if t.is_repeater and t.incumbent_course_id is not None
+    }
+    submitters = {tid for tid, _ in scores}
+
+    def claim(tid: str, cid: str | None) -> int:
+        if cid is None:
+            return 0
+        if incumbent.get(tid) == cid:
+            return INCUMBENT_CLAIM
+        return scores.get((tid, cid), 0)
+
+    ahead: set[str] = set()
+    for n, c in office.items():
+        if n in submitters or c is None or incumbent.get(n) == c:
+            continue
+        for s in submitters:
+            if (s, c) in scores and claim(s, c) > claim(s, office.get(s)):
+                ahead |= {n, s}
+
+    out: dict[str, list[str]] = {k: [] for k in MISMATCH_CATEGORIES}
+    for tid in ids:
+        placed = [c for c in (model[tid], office.get(tid)) if c is not None]
+        if tid in incumbent:
+            k = "repeater not on old course"
+        elif tid in submitters and any((tid, c) not in scores for c in placed):
+            k = "placed in unranked course"
+        elif tid in ahead:
+            k = "non-submitter ahead of submitter"
+        elif claim(tid, model[tid]) == claim(tid, office.get(tid)):
+            k = "unexplained tie"
+        else:
+            k = "other"
+        out[k].append(tid)
+    return out
+
+
 def latest_run(runs: Path) -> Path:
     for p in sorted(runs.glob(f"*{RUN_SUFFIX}.json"), reverse=True):
         if DETERMINACY_KEY in json.loads(p.read_text()):
@@ -166,7 +265,7 @@ def latest_run(runs: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])  # pyright: ignore[reportOptionalMemberAccess]
     ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument(
         "--run", type=Path, help="run JSON (default: latest one with determinacy)"
@@ -209,6 +308,12 @@ def main(argv: list[str] | None = None) -> None:
     off_pin = sorted(t for t, cid in pinned.items() if assignment.get(t) != cid)
     s["repeaters"] = sum(t.is_repeater for t in cycle.teachers)
     s["repeaters_pinned"] = len(pinned)
+    scores = claim_scores(
+        cycle.preferences, load_rules(Path(run["rules_file"])), run["excluded"]
+    )
+    s["determined_mismatch_categories"] = classify_mismatches(
+        c["determined_mismatch"], assignment, office, cycle.teachers, scores
+    )
 
     print(
         f"run: {run_path.name}  cycle {run['cycle']}  excluded rules: {run['excluded'] or 'none'}"
@@ -259,6 +364,9 @@ def main(argv: list[str] | None = None) -> None:
                 f"{d} mismatches: "
                 + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items()))
             )
+    print(f"determined mismatches, by category ({len(c['determined_mismatch'])}):")
+    for k, ids in s["determined_mismatch_categories"].items():
+        print(f"  {k:<33}{len(ids):>4}")
     print(f"office-unplaced teachers, by model ({s['teachers'] - s['office_placed']}):")
     for k, v in s["office_unplaced_by_model"].items():
         print(f"  {k:<33}{v:>4}")
@@ -269,6 +377,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.list:
         for cell, ids in c.items():
             print(f"\n{cell} ({len(ids)}): {' '.join(ids)}")
+        for k, ids in s["determined_mismatch_categories"].items():
+            print(f"\ndetermined mismatch, {k} ({len(ids)}): {' '.join(ids)}")
         if s["office_not_in_run"]:
             print(f"\noffice_not_in_run: {' '.join(s['office_not_in_run'])}")
 

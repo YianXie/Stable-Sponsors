@@ -3,8 +3,16 @@ from dataclasses import replace
 
 import pytest
 
-from stable_sponsors import model, reproduction
-from stable_sponsors.reproduction import load_office, pinned_repeaters, score
+from stable_sponsors import model, review
+from stable_sponsors.data import Preference, Teacher
+from stable_sponsors.review import (
+    MISMATCH_CATEGORIES,
+    claim_scores,
+    classify_mismatches,
+    load_office,
+    pinned_repeaters,
+    score,
+)
 from tests.conftest import RULES_PATH, make_private_root
 
 
@@ -137,7 +145,7 @@ def test_reproduction_reads_the_run_model_writes(tmp_path):
     root = tmp_path / "private"
 
     model.main(["--config", str(cfg), "--rules", str(RULES_PATH), "--optimize"])
-    reproduction.main(["--config", str(cfg)])
+    review.main(["--config", str(cfg)])
 
     (out,) = (root / "runs").glob("*_reproduction.json")
     s = json.loads(out.read_text())
@@ -146,3 +154,94 @@ def test_reproduction_reads_the_run_model_writes(tmp_path):
     assert s["repeaters_pinned"] == 2
     # repeaters are determined, and the model places them where the office did
     assert {"T1000", "T1004"} <= set(s["cells"]["determined_match"])
+    cats = s["determined_mismatch_categories"]
+    assert list(cats) == list(MISMATCH_CATEGORIES)
+    assert (
+        sorted(t for ids in cats.values() for t in ids)
+        == s["cells"]["determined_mismatch"]
+    )
+
+
+RULES = [
+    {"id": 1, "params": {"weights": [7, 6, 5]}},
+    {"id": 6, "params": {"bonus": {"intl_r1": 20, "intl_r2": 10, "sg": 0}}},
+]
+
+
+def pref(tid, round_id, rank, cid):
+    return Preference(2027, tid, round_id, rank, cid, None)
+
+
+def teacher(tid, incumbent=None):
+    return Teacher(
+        2027, tid, incumbent is not None, incumbent, incumbent,
+        False, False, False, None,
+    )  # fmt: skip
+
+
+def test_claim_scores_take_best_rank_and_best_round_separately():
+    prefs = (pref("T1", "intl_r1", 3, "A"), pref("T1", "sg", 1, "A"))
+    assert claim_scores(prefs, RULES, []) == {("T1", "A"): 7 + 20}
+    assert claim_scores(prefs, RULES, [6]) == {("T1", "A"): 7}
+    assert claim_scores(prefs, RULES, [1, 6]) == {("T1", "A"): 0}
+
+
+def test_classify_mismatches_one_teacher_per_category():
+    teachers = tuple(map(teacher, ["T2", "T3", "T4", "T5", "T6", "T7"])) + (
+        teacher("T1", incumbent="A"),
+    )
+    prefs = (
+        pref("T2", "intl_r1", 1, "B"),  # office puts T2 in unranked C
+        pref(
+            "T3", "intl_r1", 1, "D"
+        ),  # wanted D, the office gave it to non-submitter T4
+        pref("T3", "intl_r1", 2, "E"),
+        pref("T5", "intl_r1", 1, "F"),
+        pref("T6", "intl_r1", 1, "G"),
+        pref("T6", "intl_r1", 2, "H"),
+    )
+    model = {
+        "T1": "A",
+        "T2": "B",
+        "T3": "D",
+        "T4": None,
+        "T5": None,
+        "T6": "G",
+        "T7": "C",
+    }
+    office = {
+        "T1": "B",
+        "T2": "C",
+        "T3": "E",
+        "T4": "D",
+        "T5": "F",
+        "T6": "H",
+        "T7": "E",
+    }
+    out = classify_mismatches(
+        sorted(model), model, office, teachers, claim_scores(prefs, RULES, [])
+    )
+    assert list(out) == list(MISMATCH_CATEGORIES)
+    assert out == {
+        "repeater not on old course": ["T1"],
+        "placed in unranked course": ["T2"],
+        "non-submitter ahead of submitter": ["T3", "T4"],  # both sides of the pair
+        "unexplained tie": ["T7"],  # non-submitter: C and E both score 0
+        "other": [
+            "T5",
+            "T6",
+        ],  # T5: model leaves out a rank-1 placement; T6: rank 2 vs 1
+    }
+
+
+def test_incumbent_repeater_is_not_ahead_of_a_submitter():
+    teachers = (teacher("T1", incumbent="A"), teacher("T2"))
+    prefs = (pref("T2", "intl_r1", 1, "A"), pref("T2", "intl_r1", 2, "B"))
+    out = classify_mismatches(
+        ["T2"],
+        {"T1": "A", "T2": "A"},
+        {"T1": "A", "T2": "B"},
+        teachers,
+        claim_scores(prefs, RULES, []),
+    )
+    assert out["other"] == ["T2"]

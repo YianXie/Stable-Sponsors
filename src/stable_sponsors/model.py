@@ -22,7 +22,7 @@ STATUS = {
 }
 SOLVED = (cp_model.OPTIMAL, cp_model.FEASIBLE)  # the solver found an assignment
 
-# The run report contract: main() writes runs/<when>_model_run.json, reproduction.py reads it.
+# The run report contract: main() writes runs/<when>_model_run.json, review.py reads it.
 RUN_SUFFIX = "_model_run"
 OPTIMAL_KEY = (
     "optimal_result"  # asdict(OptimalResult); only written when proven optimal
