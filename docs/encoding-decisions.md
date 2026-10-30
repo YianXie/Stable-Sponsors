@@ -54,3 +54,14 @@ Discovery: PHIL-4 has 3 sponsors, while the rest all have two.
 Changes: PHIL-4's min and max sponsor slot is manually set to 3 in `course_param.csv`, while the rest stay at 2-2. The private `derived/` folder is regenerated. The bug is fixed.
 
 `model --no-lineage` (`load_cycle(..., use_lineage=False)`) disables the lineage fix to replay pre-fix runs (R1, R2). A repeater's prior-year code is matched by code against this year's catalogue. A code that is not in this year's catalogue gives no incumbency, the same as a discontinued course, rather than an error. The lineage file is not read. The run report records `"lineage": true/false`.
+
+**2026-10-26**
+
+`review` sorts determined mismatches into 5 categories, each teacher into the first that fits. A teacher's claim on a course is its score in the objective (rule 1 best-rank weight + rule 6 best-round bonus); unranked or unplaced scores 0, and a repeater's incumbent course beats any ranking.
+
+1. Repeater not on old course: a repeater with an incumbent course (discontinued courses don't count).
+2. Placed in unranked course: a submitter that the office or the model placed in a course they didn't rank.
+3. Non-submitter ahead of submitter: either side of an office placement where a non-submitter holds a course that a submitter ranked and has a higher claim on than on their own office placement. A repeater on their incumbent course is not "ahead".
+4. Unexplained tie: the teacher's claim is the same on the office's and the model's placement, so the encoded rules don't prefer either for them.
+5. Other.
+   Status: assumed. The order matters (a repeater in an unranked course counts as 1, not 2). Category 3 is a property of the office's whole allocation, not proof that the pair caused this teacher's mismatch.
