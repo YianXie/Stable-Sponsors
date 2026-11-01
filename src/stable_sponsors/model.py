@@ -21,8 +21,9 @@ STATUS = {
     cp_model.UNKNOWN: "unknown",  # hit the time limit. NOT the same as infeasible
 }
 SOLVED = (cp_model.OPTIMAL, cp_model.FEASIBLE)  # the solver found an assignment
+INACTIVE_STATUSES = ("deferred", "contradicted")
 
-# The run report contract: main() writes runs/<when>_model_run.json, reproduction.py reads it.
+# The run report contract: main() writes runs/<when>_model_run.json, review.py reads it.
 RUN_SUFFIX = "_model_run"
 OPTIMAL_KEY = (
     "optimal_result"  # asdict(OptimalResult); only written when proven optimal
@@ -43,13 +44,20 @@ class FeasibilityResult:
 @dataclass(frozen=True)
 class OptimalResult:
     status: str  # "optimal" only if proven
-    value: int | None  # best total score V
+    value: int | None  # best value of objective_expr, V
+    primary_value: (
+        int | None
+    )  # sum(objective), comparable across runs with or without rule 11
     wall_time: float
     assignment: dict[str, str | None] | None
 
 
 def active_rules(rules: list[dict], classes=("hard", "priority")) -> list[dict]:
-    return [r for r in rules if r["class"] in classes and r["status"] != "deferred"]
+    return [
+        r
+        for r in rules
+        if r["class"] in classes and r["status"] not in INACTIVE_STATUSES
+    ]
 
 
 def load_rules(path: Path, classes=("hard", "priority")) -> list[dict]:
@@ -74,6 +82,17 @@ def load_cycle_from_config(cfg: dict, cycle: int, use_lineage: bool = True) -> C
     )
 
 
+def objective_expr(ctx: Ctx) -> cp_model.LinearExprT:
+    """The objective, with secondary terms only able to break ties.
+
+    K exceeds any total of the secondary terms, since each teacher is in at most one course and each
+    term is -1. Without secondary terms it is the plain score, so such runs keep their old values.
+    """
+    if not ctx.secondary:
+        return sum(ctx.objective)
+    return (len(ctx.cycle.teachers) + 1) * sum(ctx.objective) + sum(ctx.secondary)
+
+
 def build_model(
     cycle: Cycle, rules: list[dict], exclude: frozenset[int] = frozenset()
 ) -> Ctx:
@@ -82,7 +101,7 @@ def build_model(
         if r["id"] not in exclude:
             ENCODERS[r["id"]](ctx, r["params"])
     if ctx.objective:
-        ctx.model.maximize(sum(ctx.objective))
+        ctx.model.maximize(objective_expr(ctx))
     return ctx
 
 
@@ -129,6 +148,7 @@ def solve_optimal(
         return OptimalResult(
             "optimal",
             round(solver.objective_value),
+            round(solver.value(sum(ctx.objective))),
             solver.wall_time,
             _assignment(solver, ctx, cycle),
         )
@@ -137,7 +157,7 @@ def solve_optimal(
     status = {cp_model.FEASIBLE: "not_proven", cp_model.INFEASIBLE: "infeasible"}.get(
         code, "unknown"
     )
-    return OptimalResult(status, None, solver.wall_time, None)
+    return OptimalResult(status, None, None, solver.wall_time, None)
 
 
 def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str, bool]:
@@ -146,10 +166,11 @@ def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str,
         raise RuntimeError(f"can't analyse ties: base solve was {base.status}")
     assert base.assignment is not None  # always set when status is "optimal"
 
-    # One model pinned at the optimum; each teacher's check runs on a copy of it.
+    # A teacher is determined if forbidding their placement lowers the optimum. Re-optimising is
+    # far faster than proving "no solution reaches V" with the objective pinned as a constraint.
     ctx = build_model(cycle, rules, exclude=exclude)
-    ctx.model.add(sum(ctx.objective) == base.value)
-    if _solve(ctx.model, time_limit)[1] not in SOLVED:
+    solver, code = _solve(ctx.model, time_limit)
+    if code != cp_model.OPTIMAL or round(solver.objective_value) != base.value:
         raise RuntimeError(
             "check model can't reach the optimum: base and check models differ"
         )
@@ -163,11 +184,65 @@ def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str,
             model.add(sum(x.values()) >= 1)
         else:
             model.add(x[cid] == 0)
-        _, code = _solve(model, time_limit)
-        if code != cp_model.INFEASIBLE and code not in SOLVED:
+        solver, code = _solve(model, time_limit)
+        if code == cp_model.INFEASIBLE:
+            out[tid] = True
+        elif code == cp_model.OPTIMAL:
+            out[tid] = round(solver.objective_value) < base.value  # True = determined
+        else:
             raise RuntimeError(f"timed out checking {tid}")
-        out[tid] = code == cp_model.INFEASIBLE  # True = determined
     return out
+
+
+def placement_costs(
+    cycle: Cycle,
+    rules: list[dict],
+    pairs: list[tuple[str, str]],
+    exclude=frozenset(),
+    time_limit=10.0,
+) -> dict[tuple[str, str], int | None]:
+    """Preference score lost by forcing each (teacher_id, course_id); None if hard rules forbid it.
+
+    Measured on the primary score, so a fallback that only uses up the secondary term costs 0.
+    """
+    base = solve_optimal(cycle, rules, exclude=exclude, time_limit=time_limit)
+    if base.status != "optimal":
+        raise RuntimeError(f"no optimum to compare with: base solve was {base.status}")
+    assert base.primary_value is not None  # always set when status is "optimal"
+    ctx = build_model(cycle, rules, exclude=exclude)
+    out: dict[tuple[str, str], int | None] = {}
+    for tid, cid in pairs:
+        model = ctx.model.clone()
+        model.add(model.get_bool_var_from_proto_index(ctx.x[(tid, cid)].index) == 1)
+        solver, code = _solve(model, time_limit)
+        if code == cp_model.INFEASIBLE:
+            out[(tid, cid)] = None
+        elif code == cp_model.OPTIMAL:
+            out[(tid, cid)] = base.primary_value - round(
+                solver.value(sum(ctx.objective))
+            )
+        else:
+            raise RuntimeError(f"timed out checking {tid}")
+    return out
+
+
+def min_fallbacks(
+    cycle: Cycle, rules: list[dict], exclude=frozenset(), time_limit=60.0
+) -> int | None:
+    """Fewest placements into unranked courses the hard rules allow, ignoring preference score.
+
+    Needs rule 11 among ``rules``. Each newly known gender can only keep or raise this. None if the
+    hard rules can't be met at all.
+    """
+    ctx = build_model(cycle, rules, exclude=exclude)
+    ctx.model.clear_objective()
+    ctx.model.maximize(sum(ctx.secondary))
+    solver, code = _solve(ctx.model, time_limit)
+    if code == cp_model.INFEASIBLE:
+        return None
+    if code != cp_model.OPTIMAL:
+        raise RuntimeError("timed out finding the fewest fallbacks")
+    return -round(solver.objective_value)
 
 
 def diagnose(cycle, rules) -> dict:
@@ -234,18 +309,22 @@ def main(argv: list[str] | None = None) -> None:
     exclude = frozenset(args.exclude)
     if exclude - all_ids:
         raise SystemExit(f"--exclude {sorted(exclude - all_ids)}: no such rule id")
-    inactive = exclude - {r["id"] for r in hard_rules}
+    inactive = exclude - {r["id"] for r in active_rules(all_rules)}
     if inactive:
-        print(f"note: --exclude {sorted(inactive)} already off (deferred or not hard)")
+        print(
+            f"note: --exclude {sorted(inactive)} already off (deferred, contradicted or tie-break)"
+        )
         exclude -= inactive
-    names = {r["id"]: r["name"] for r in hard_rules}
+    names = {r["id"]: r["name"] for r in active_rules(all_rules)}
 
     print(
         f"cycle {args.cycle}: {len(cycle.teachers)} teachers, {len(cycle.courses)} courses"
     )
     print(
         "hard rules to check feasibility on: "
-        + ", ".join(f"{i} {names[i]}" for i in names if i not in exclude)
+        + ", ".join(
+            f"{r['id']} {r['name']}" for r in hard_rules if r["id"] not in exclude
+        )
     )
     if exclude:
         print("excluded: " + ", ".join(f"{i} {names[i]}" for i in sorted(exclude)))
@@ -303,9 +382,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.optimize:
         rules = active_rules(all_rules)
         opt = solve_optimal(cycle, rules, exclude=exclude, time_limit=args.time_limit)
-        print(f"OPTIMAL: {opt.status}  value={opt.value}  ({opt.wall_time:.2f}s)")
+        print(
+            f"OPTIMAL: {opt.status}  value={opt.value}  primary={opt.primary_value}  ({opt.wall_time:.2f}s)"
+        )
         if opt.status == "optimal":
-            det = determinacy(cycle, rules, exclude=exclude)
+            det = determinacy(cycle, rules, exclude=exclude, time_limit=args.time_limit)
 
             submitters = {p.teacher_id for p in cycle.preferences}
             determined = [t for t, d in det.items() if d]

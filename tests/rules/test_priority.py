@@ -1,7 +1,11 @@
+from dataclasses import replace
+
 import pytest
 
 from stable_sponsors.data import Cycle
 from stable_sponsors.model import determinacy, load_rules, solve_optimal
+from stable_sponsors.rules.context import build_ctx
+from stable_sponsors.rules.priority import unranked_fallback
 from tests.conftest import RULES_PATH
 
 
@@ -40,3 +44,25 @@ def test_determinacy_flags_a_forced_placement(toy_cycle):
     r = determinacy(toy_cycle, rules)
     assert r["T1000"]  # T1000 is a repeater, so their placement is determined
     assert r["T1004"]  # T1004 is a repeater, so their placement is determined
+
+
+def test_rule_11_penalises_only_unranked_non_incumbent_courses(toy_cycle: Cycle):
+    ctx = build_ctx(toy_cycle)
+    unranked_fallback(ctx, {})
+    # 3 submitters (T1001-T1003) x 4 courses - 6 rankings = 6 unranked pairs; repeaters aren't submitters
+    assert len(ctx.secondary) == 6
+    assert ctx.objective == []
+
+
+def test_rule_11_skips_a_submitting_repeaters_incumbent_course(toy_cycle: Cycle):
+    teachers = tuple(
+        replace(
+            t, is_repeater=True, prior_course_id="INTL-3", incumbent_course_id="INTL-3"
+        )
+        if t.teacher_id == "T1001"
+        else t
+        for t in toy_cycle.teachers
+    )
+    ctx = build_ctx(replace(toy_cycle, teachers=teachers))
+    unranked_fallback(ctx, {})
+    assert len(ctx.secondary) == 5

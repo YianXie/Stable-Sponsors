@@ -1,5 +1,7 @@
+import argparse
 from collections import Counter
 from pathlib import Path
+from typing import Literal
 
 from stable_sponsors.data import (
     ObservedPlacement,
@@ -16,6 +18,17 @@ from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_
 from stable_sponsors.rules.context import Ctx
 
 CYCLE = 2027
+
+Origin = Literal["all_unrun", "some_unrun", "none_unrun"]
+ORIGINS: tuple[Origin, ...] = ("all_unrun", "some_unrun", "none_unrun")
+
+
+def fallback_origin(ranked: set[str], ran: set[str]) -> Origin:
+    """How many of the courses a teacher ranked did not run."""
+    running = ranked & ran
+    if not running:
+        return "all_unrun"
+    return "none_unrun" if running == ranked else "some_unrun"
 
 
 def _placed(observed) -> dict[str, str]:
@@ -43,6 +56,7 @@ def violations(cycle, observed) -> dict[str, list]:
             "0 incumbency",
             "3 qualification",
             "4 only_ranked",
+            "5 slot_gender",
             "9 capacity",
             "10 course_set",
         )
@@ -64,8 +78,15 @@ def violations(cycle, observed) -> dict[str, list]:
             and cid != incumbent
         ):
             v["4 only_ranked"].append(t.teacher_id)
+    gender = {t.teacher_id: t.gender for t in cycle.teachers}
     for c in cycle.courses:
         n = load.get(c.course_id, 0)
+        known = Counter(gender[t] for t, cid in obs.items() if cid == c.course_id)
+        if (
+            known["male"] > c.max_sponsors - c.female_slots
+            or known["female"] > c.max_sponsors - c.male_slots
+        ):
+            v["5 slot_gender"].append((c.course_id, known["male"], known["female"]))
         if c.ran and not (c.min_sponsors <= n <= c.max_sponsors):
             v["9 capacity"].append((c.course_id, n))
         if not c.ran and n:
@@ -102,7 +123,8 @@ def explain(cycle, observed, v):
 
         print(
             f"  ranked={len(mine)}  of which ran={n_running}  "
-            f"same pool as placement={same_pool}  repeater={teachers[tid].is_repeater}"
+            f"same pool as placement={same_pool}  repeater={teachers[tid].is_repeater}  "
+            f"origin={fallback_origin(mine, running)}"
         )
 
 
@@ -202,9 +224,16 @@ def score_observed(cycle, rules, observed, exclude=frozenset(), time_limit=30.0)
     return "infeasible", broken
 
 
-def main() -> None:
-    config = load_config(DEFAULT_CONFIG)
-    rules = load_rules(Path("config/rules-2027.yaml"))
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser(
+        description="Check the office's allocation against the hard rules."
+    )
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
+    ap.add_argument("--rules", default="config/rules-2027.yaml", type=Path)
+    args = ap.parse_args(argv)
+
+    config = load_config(args.config)
+    rules = load_rules(args.rules)
     derived = out_path(config, "derived")
     cycle = load_cycle_from_config(config, CYCLE)
     observed = load_observed_placements(derived / "placements.csv", cycle)

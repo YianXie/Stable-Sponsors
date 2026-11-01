@@ -15,6 +15,7 @@ class Ctx:
         x (dict[tuple[str, str], cp_model.IntVar]): A dictionary mapping teacher-course pairs to boolean variables (teacher assigned to course).
         y (dict[str, cp_model.IntVar]): A dictionary mapping courses to boolean variables (course runs).
         objective (list): A list of terms to be added to the objective function.
+        secondary (list): Terms that only break ties among solutions with the best objective.
     """
 
     model: cp_model.CpModel
@@ -22,6 +23,7 @@ class Ctx:
     x: dict[tuple[str, str], cp_model.IntVar]
     y: dict[str, cp_model.IntVar]
     objective: list = field(default_factory=list)
+    secondary: list = field(default_factory=list)
 
 
 def build_ctx(cycle: Cycle) -> Ctx:

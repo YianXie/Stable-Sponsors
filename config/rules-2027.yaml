@@ -2,7 +2,7 @@ schema_version: 1
 cycle: 2027
 source_docs:
   procedure: "Faculty Sponsor Allocation Process - Interim Semester, as received"
-  diff: "docs/procedure-diff-v1.0.md"
+  diff: "docs/procedure-diff-v1.1.md"
 
 rules:
   - id: 0
@@ -49,23 +49,25 @@ rules:
     params: {}
     source: "diff 13"
     status: assumed
+    notes: "Repeater's incumbent course counts as ranked; amendment supported by the interview (repeaters are asked first, before open sign-up; Q6)."
 
   - id: 5
     name: slot_gender
     class: hard
-    description: A slot marked MALE or FEMALE is filled only by a teacher of that gender.
+    description: A course's known male and female sponsors leave room for its gendered slots. Unknown genders are unconstrained.
     params: {}
-    source: "diff 7: seen in form suffixes, not in procedure"
-    status: deferred
-    notes: "Since no teacher gender data is available, this rule is deferred. If gender data is added, this rule will be implemented."
+    source: "M-009; D-004; diff 16"
+    status: reported
+    notes: "Gender inferred from form labels; non-submitters mostly unknown. Encoded as hard, though the office described it as a preference."
 
   - id: 6
     name: round_precedence
     class: priority
     params:
       bonus: { intl_r1: 20, intl_r2: 10, sg: 0 } # gaps > max rank weight (7)
+    source: "M-014; diff 21"
     status: assumed
-    notes: "Order assumed from the form sequence (02 → 03 → 04). Ask office whether SG is a fallback pool."
+    notes: "intl > sg reported (M-014); r1 > r2 still assumed."
 
   - id: 7
     name: tie_break
@@ -89,8 +91,8 @@ rules:
     class: hard
     description: Each course is assigned at least its minimum and at most its maximum number of teachers.
     params: {}
-    source: "diff 12"
-    status: assumed
+    source: "M-008; diff 15"
+    status: reported
 
   - id: 10
     name: courses_run_as_observed
@@ -98,5 +100,23 @@ rules:
     description: The set of running courses is fixed before sponsors are allocated.
     params: {}
     source: "inferred from run 2026-10-18 (8 submitters unplaced; course sets differ)"
+    status: contradicted
+    notes: "M-011. Kept for replay via rules-2027-v2.3.yaml. M-011 contradicts a fixed set of courses, not necessarily a fixed number of them (see docs/interview-2026-10-28.md, Q5)."
+
+  - id: 11
+    name: unranked_fallback
+    class: priority
+    description: A submitter may take a course they did not rank, but only when that costs no preference score.
+    params: {}
+    source: "M-013; diff 20"
     status: assumed
-    notes: "Uses an outcome (which courses ran) as an input. Legitimate only if the office confirms the course list was set before sponsor allocation."
+    notes: "Secondary term: only breaks ties among solutions with the best preference score, and only matters with rule 4 excluded. Gate G1 failed; built on the author's decision after the infeasibility in report §6.3, so runs using it are exploratory."
+
+  - id: 12
+    name: language_at_least_one
+    class: hard
+    description: A language immersion course has at least one sponsor with that language.
+    params: {}
+    source: "M-010; diff 17"
+    status: deferred
+    notes: "Needs teacher language data from the office; coding it from free text would treat unknown as no. Encoded as hard, though the office described it as a preference."

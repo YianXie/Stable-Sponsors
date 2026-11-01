@@ -70,37 +70,43 @@ def only_ranked_courses(ctx: Ctx, params: dict) -> None:
 
 @register(5)
 def slot_gender(ctx: Ctx, params: dict) -> None:
-    """Ensure that each running course gets at least its male and female slots filled by teachers of that gender.
+    """Leave room for each course's gendered slots, using only the genders we know.
+
+    Known males fill at most max - female_slots seats, and known females at most max - male_slots.
+    A teacher of unknown gender is unconstrained: unknown is not "no". When every gender is known
+    and a running course is full, this is the same as requiring male_slots males and female_slots
+    females.
 
     Args:
         ctx (Ctx): The context
         params (dict): The parameters for the course, from the yaml config file
 
     Raises:
-        ValueError: If a teacher has no gender specified or a course has no male or female slots specified.
+        ValueError: If a course's slots or maximum are unspecified, or the slots exceed the maximum.
     """
 
-    for teacher in ctx.cycle.teachers:
-        if teacher.gender is None:
-            raise ValueError(f"Teacher {teacher.teacher_id} has no gender specified")
-
-    # A running course has at least `female_slots` female and `male_slots` male sponsors.
     for course in ctx.cycle.courses:
         if course.male_slots is None or course.female_slots is None:
             raise ValueError(
                 f"Course {course.course_id} must have both male and female slots specified."
             )
+        if course.max_sponsors is None:
+            raise ValueError(f"Course {course.course_id} has no maximum specified.")
+        if course.male_slots + course.female_slots > course.max_sponsors:
+            raise ValueError(f"Course {course.course_id}: slots exceed max.")
         cid = course.course_id
-        for gender, slots in (
-            ("female", course.female_slots),
-            ("male", course.male_slots),
+        for gender, opposite_slots in (
+            ("male", course.female_slots),
+            ("female", course.male_slots),
         ):
             sponsors = sum(
                 ctx.x[(t.teacher_id, cid)]
                 for t in ctx.cycle.teachers
                 if t.gender == gender
             )
-            ctx.model.add(sponsors >= slots * ctx.y[cid])
+            ctx.model.add(
+                sponsors <= (course.max_sponsors - opposite_slots) * ctx.y[cid]
+            )
 
 
 @register(8)

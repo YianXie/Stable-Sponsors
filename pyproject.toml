@@ -1,7 +1,7 @@
 [project]
 name = "stable-sponsors"
 version = "0.1.0"
-description = "Add your description here"
+description = "Constraint-based model of SAS Interim Semester faculty sponsor allocation"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -23,12 +23,4 @@ testpaths = ["tests"]
 pythonpath = ["src", "tools"]
 
 [tool.ruff]
-exclude = [
-    ".git",
-    ".venv",
-    "build",
-    "dist",
-    "migrations",
-    ".agents",
-    ".claude",
-]
+exclude = [".git", ".venv", "build", "dist", "migrations", ".agents", ".claude", "docs/superpowers"]
