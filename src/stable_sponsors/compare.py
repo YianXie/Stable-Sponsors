@@ -43,6 +43,7 @@ def violations(cycle, observed) -> dict[str, list]:
             "0 incumbency",
             "3 qualification",
             "4 only_ranked",
+            "5 slot_gender",
             "9 capacity",
             "10 course_set",
         )
@@ -64,8 +65,15 @@ def violations(cycle, observed) -> dict[str, list]:
             and cid != incumbent
         ):
             v["4 only_ranked"].append(t.teacher_id)
+    gender = {t.teacher_id: t.gender for t in cycle.teachers}
     for c in cycle.courses:
         n = load.get(c.course_id, 0)
+        known = Counter(gender[t] for t, cid in obs.items() if cid == c.course_id)
+        if (
+            known["male"] > c.max_sponsors - c.female_slots
+            or known["female"] > c.max_sponsors - c.male_slots
+        ):
+            v["5 slot_gender"].append((c.course_id, known["male"], known["female"]))
         if c.ran and not (c.min_sponsors <= n <= c.max_sponsors):
             v["9 capacity"].append((c.course_id, n))
         if not c.ran and n:

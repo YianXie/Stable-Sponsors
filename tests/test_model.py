@@ -38,14 +38,17 @@ def test_assignment_respects_incumbency(toy_cycle):
 
 def test_diagnose_finds_planted_conflict(toy_cycle):
     # Cap INTL-1 at 0 sponsors. That conflicts with T1000's incumbency.
+    # Without rule 5, whose upper bound would hold the cap even with rule 9 dropped.
     bad = replace(
         toy_cycle,
         courses=tuple(
-            replace(c, min_sponsors=0, max_sponsors=0) if c.course_id == "INTL-1" else c
+            replace(c, min_sponsors=0, max_sponsors=0, male_slots=0, female_slots=0)
+            if c.course_id == "INTL-1"
+            else c
             for c in toy_cycle.courses
         ),
     )
-    d = diagnose(bad, RULES)
+    d = diagnose(bad, [r for r in RULES if r["id"] != 5])
     assert d["leave_one_out"][0] == "feasible"  # drop incumbency → fixed
     assert d["leave_one_out"][9] == "feasible"  # drop capacity → fixed
 

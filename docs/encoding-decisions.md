@@ -98,3 +98,6 @@ Added after seeing the above, so exploratory rather than a gate: M-011 doesn't f
 Gender params refreshed with `--refresh-cols gender male_slots female_slots`. Gender is inferred from the form's slot label (status `inferred`): 18 male, 34 female, 1 conflict left blank, 52 other submitters unknown, 34 non-submitters unknown. So 52 / 138 known, and a label only appears where a course showed a gendered slot. Every course is 1M/1F; PHIL-4 stays 3–3. The old params are in `params/backup/`. R3 still replays (rule 5 is off in the v2.3 file).
 
 Prediction, written before running `compare` with rule 5: the office's allocation has 0 rule-5 violations. If it has more, either the rule isn't strict (described as a preference, M-009) or the labels are noisy, and rule 5 comes out of the primary run until the office answers.
+
+Rule 5 is `reported` and uses an at-most form, so partial data can't force a wrong placement: known males ≤ (max − female_slots)·y and known females ≤ (max − male_slots)·y. Unknowns are free. It only overlaps rule 9 where a course's maximum is small: with rule 9 off it still caps known sponsors.
+`compare` result: 0 rule-5 violations, as predicted. With 52 / 138 genders known this is a weak test: the label appears only on the courses the form showed as gendered.

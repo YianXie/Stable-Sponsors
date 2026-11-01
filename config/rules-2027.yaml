@@ -54,11 +54,11 @@ rules:
   - id: 5
     name: slot_gender
     class: hard
-    description: A slot marked MALE or FEMALE is filled only by a teacher of that gender.
+    description: A course's known male and female sponsors leave room for its gendered slots. Unknown genders are unconstrained.
     params: {}
     source: "M-009; D-004; diff 16"
-    status: deferred
-    notes: "Since no teacher gender data is available, this rule is deferred. If gender data is added, this rule will be implemented."
+    status: reported
+    notes: "Gender inferred from form labels; non-submitters mostly unknown. Encoded as hard, though the office described it as a preference."
 
   - id: 6
     name: round_precedence

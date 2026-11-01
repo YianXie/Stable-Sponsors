@@ -239,50 +239,102 @@ def test_repeater_can_take_unranked_prior_course(toy_cycle):
 ### Slot gender tests
 
 
-def test_female_slot_mismatch_is_infeasible(ctx: Ctx) -> None:
-    """Test that a teacher cannot be assigned to a course that does not match their gender.
-
-    Args:
-        ctx (Ctx): the context for the toy cycle.
-    """
-
-    course_capacity(ctx, {})
-    slot_gender(ctx, {})
-    # T1000 and T1002 are male; INTL-2 needs 1 female
-    force(ctx, ("T1000", "T1002"), "INTL-2")
-    status = solve(ctx)
-    assert status == cp_model.INFEASIBLE
-
-
-def test_female_slot_match_is_feasible(ctx: Ctx) -> None:
-    """Test that a teacher can be assigned to a course that matches their gender.
-
-    Args:
-        ctx (Ctx): the context for the toy cycle.
-    """
-
-    slot_gender(ctx, {})
-    force(ctx, ("T1003",), "INTL-2")  # T1003 is female; INTL-2 needs 1 female
-    status = solve(ctx)
-    assert status in SOLVED
-
-
-def test_missing_teacher_gender_raises(ctx: Ctx) -> None:
-    """Test that a ValueError is raised if a teacher has no gender specified.
-
-    Args:
-        ctx (Ctx): the context for the toy cycle.
-    """
-
-    # Remove gender from T1000
+def _with_genders(ctx: Ctx, **genders: str | None) -> None:
     ctx.cycle = replace(
         ctx.cycle,
         teachers=tuple(
-            replace(t, gender=None) if t.teacher_id == "T1000" else t
+            replace(t, gender=genders[t.teacher_id]) if t.teacher_id in genders else t
             for t in ctx.cycle.teachers
         ),
     )
-    with pytest.raises(ValueError, match="has no gender specified"):
+
+
+def _with_course(ctx: Ctx, course_id: str, **fields) -> None:
+    ctx.cycle = replace(
+        ctx.cycle,
+        courses=tuple(
+            replace(c, **fields) if c.course_id == course_id else c
+            for c in ctx.cycle.courses
+        ),
+    )
+
+
+def test_two_known_males_cannot_share_one_one_course(ctx: Ctx) -> None:
+    _with_genders(ctx, T1000="male", T1002="male")
+    course_capacity(ctx, {})
+    slot_gender(ctx, {})
+    force(ctx, ("T1000", "T1002"), "INTL-2")
+    assert solve(ctx) == cp_model.INFEASIBLE
+
+
+def test_two_known_females_cannot_share_one_one_course(ctx: Ctx) -> None:
+    course_capacity(ctx, {})
+    slot_gender(ctx, {})
+    force(ctx, ("T1000", "T1002"), "INTL-2")  # toy: both female
+    assert solve(ctx) == cp_model.INFEASIBLE
+
+
+def test_male_and_female_can_share_one_one_course(ctx: Ctx) -> None:
+    course_capacity(ctx, {})
+    slot_gender(ctx, {})
+    force(ctx, ("T1001", "T1003"), "INTL-2")  # toy: male and female
+    assert solve(ctx) in SOLVED
+
+
+def test_unknown_gender_is_unconstrained(ctx: Ctx) -> None:
+    _with_genders(ctx, T1000=None, T1002=None)
+    course_capacity(ctx, {})
+    slot_gender(ctx, {})
+    force(ctx, ("T1000", "T1002"), "INTL-2")
+    assert solve(ctx) in SOLVED
+
+
+def test_known_male_and_unknown_can_share(ctx: Ctx) -> None:
+    _with_genders(ctx, T1000="male", T1002=None)
+    course_capacity(ctx, {})
+    slot_gender(ctx, {})
+    force(ctx, ("T1000", "T1002"), "INTL-2")
+    assert solve(ctx) in SOLVED
+
+
+def test_three_sponsor_course_allows_two_males(ctx: Ctx) -> None:
+    _with_genders(ctx, T1000="male", T1001="male", T1002="female")
+    _with_course(ctx, "INTL-2", min_sponsors=3, max_sponsors=3)
+    course_capacity(ctx, {})
+    slot_gender(ctx, {})
+    force(ctx, ("T1000", "T1001", "T1002"), "INTL-2")
+    assert solve(ctx) in SOLVED
+
+
+def test_three_sponsor_course_rejects_three_males(ctx: Ctx) -> None:
+    _with_genders(ctx, T1000="male", T1001="male", T1002="male")
+    _with_course(ctx, "INTL-2", min_sponsors=3, max_sponsors=3)
+    course_capacity(ctx, {})
+    slot_gender(ctx, {})
+    force(ctx, ("T1000", "T1001", "T1002"), "INTL-2")
+    assert solve(ctx) == cp_model.INFEASIBLE
+
+
+def test_course_with_no_male_slot_allows_two_females(ctx: Ctx) -> None:
+    # toy SING-1: 1-2 sponsors, female_slots=1, male_slots=0
+    course_capacity(ctx, {})
+    slot_gender(ctx, {})
+    force(ctx, ("T1000", "T1002"), "SING-1")
+    assert solve(ctx) in SOLVED
+
+
+def test_course_with_no_male_slot_allows_at_most_one_male(ctx: Ctx) -> None:
+    # toy SING-1: max 2, female_slots=1, so 2 known males leave no seat for the female slot
+    _with_genders(ctx, T1000="male", T1002="male")
+    course_capacity(ctx, {})
+    slot_gender(ctx, {})
+    force(ctx, ("T1000", "T1002"), "SING-1")
+    assert solve(ctx) == cp_model.INFEASIBLE
+
+
+def test_slots_exceeding_max_raises(ctx: Ctx) -> None:
+    _with_course(ctx, "INTL-2", max_sponsors=1)
+    with pytest.raises(ValueError, match="slots exceed max"):
         slot_gender(ctx, {})
 
 
