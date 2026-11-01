@@ -32,9 +32,9 @@ from stable_sponsors.model import (
     DETERMINACY_KEY,
     OPTIMAL_KEY,
     RUN_SUFFIX,
-    in_some_optimum,
     load_cycle_from_config,
     load_rules,
+    placement_costs,
 )
 from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 
@@ -379,15 +379,17 @@ def main(argv: list[str] | None = None) -> None:
         if t.is_repeater and t.incumbent_course_id is not None
     }
     overlap = unranked_overlap(assignment, office, scores, incumbent)
-    reachable = in_some_optimum(
+    costs = placement_costs(
         cycle,
         load_rules(Path(run["rules_file"])),
         [(t, office[t]) for t in overlap["office"]],
         exclude=frozenset(run["excluded"]),
         time_limit=OPTIMUM_CHECK_SECONDS,
     )
+    known_costs = sorted(c for c in costs.values() if c is not None)
     s["unranked_overlap"] = overlap
-    s["office_unranked_in_some_optimum"] = sum(reachable.values())
+    s["office_unranked_costs"] = known_costs
+    s["office_unranked_forbidden"] = len(costs) - len(known_costs)
 
     print(
         f"run: {run_path.name}  cycle {run['cycle']}  excluded rules: {run['excluded'] or 'none'}"
@@ -446,13 +448,14 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  {k:<33}{v:>4}")
     print("placements into unranked courses:")
     print(f"  by the office:                   {len(overlap['office']):>4}")
-    print(f"    allowed in some optimal solution: {sum(reachable.values()):>2}")
-    print(f"  by the model:                    {len(overlap['model']):>4}")
+    print(f"    forbidden by the hard rules:   {s['office_unranked_forbidden']:>4}")
+    print(f"    preference score each costs:   {known_costs}")
+    print(f"  by the model, one optimal solution: {len(overlap['model']):>2}")
     print(f"    same teacher, same course:     {len(overlap['same_course']):>4}")
     print(f"    same teacher, other course:    {len(overlap['both_elsewhere']):>4}")
     print(f"    courses both used this way:    {len(overlap['courses_in_common']):>4}")
     print(
-        "\ncontested match/mismatch reflects one arbitrary optimal solution: not evidence."
+        "\ncontested match/mismatch and the model's unranked placements reflect one arbitrary optimal solution: not evidence."
     )
 
     if args.list:

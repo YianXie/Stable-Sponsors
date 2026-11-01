@@ -7,6 +7,7 @@ Three counts that gate later model changes (thresholds in docs/encoding-decision
     (c) residuals on language immersion courses
     (d) how many teachers ranked the courses that did not run
     (e) whether teachers who preferred those courses could have staffed them, course by course
+    (f) the fewest fallback placements the office's course set needs, and what they depend on
 
 Reads inputs and observed placements only. Console output is counts and trip codes; gender and
 language are never printed per teacher.
@@ -16,11 +17,12 @@ language are never printed per teacher.
 
 import argparse
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 from stable_sponsors.compare import ORIGINS, claim_scores, fallback_origin, violations
 from stable_sponsors.data import Cycle, load_observed_placements
-from stable_sponsors.model import load_cycle_from_config, load_rules
+from stable_sponsors.model import load_cycle_from_config, load_rules, min_fallbacks
 from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 
 # The 2027 catalogue's language immersion courses. A country doesn't identify them: China has 8 courses.
@@ -64,6 +66,17 @@ def rankers_at_placement(
     """Sorted: how many teachers ranked the course each of these teachers was placed in."""
     rankers = Counter(cid for _, cid in set(prefs))
     return sorted(rankers[placed[tid]] for tid in ids)
+
+
+def without_pins(cycle: Cycle, teacher_ids: set[str]) -> Cycle:
+    """The cycle with these repeaters' incumbent courses removed, so rule 0 doesn't pin them."""
+    return replace(
+        cycle,
+        teachers=tuple(
+            replace(t, incumbent_course_id=None) if t.teacher_id in teacher_ids else t
+            for t in cycle.teachers
+        ),
+    )
 
 
 def repeater_status(cycle: Cycle) -> Counter[tuple[str, bool]]:
@@ -110,6 +123,11 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument("--cycle", default=2027, type=int)
     ap.add_argument("--rules", default="config/rules-2027.yaml")
+    ap.add_argument(
+        "--fixed-set-rules",
+        default="config/rules-2027-v3.1-fixed-set.yaml",
+        help="rules with rule 10 on and rule 11 active, for check (f)",
+    )
     ap.add_argument(
         "--language-courses",
         default=LANGUAGE_COURSES,
@@ -201,6 +219,21 @@ def main(argv: list[str] | None = None) -> None:
     print(f"    teachers with a known gender: {len(known)} / {len(teachers)}")
     print(
         "    per course, not jointly: a placed teacher who moved would leave their course short"
+    )
+
+    # Rule 4 off, rule 11 counting: can the office's courses run from ranked courses alone?
+    fixed = load_rules(Path(args.fixed_set_rules))
+    no_rule_4 = frozenset({4})
+    print("\n(f) fewest fallback placements on the office's course set")
+    print(
+        f"    all rules:                       {min_fallbacks(cycle, fixed, no_rule_4)}"
+    )
+    print(
+        f"    without rule 5:                  {min_fallbacks(cycle, fixed, no_rule_4 | {5})}"
+    )
+    suspect = without_pins(cycle, set(v["0 incumbency"]))
+    print(
+        f"    without the rule-0 residuals' pins: {min_fallbacks(suspect, fixed, no_rule_4)}"
     )
 
 

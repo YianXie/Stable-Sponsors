@@ -7,6 +7,7 @@ from stable_sponsors.interview_checks import (
     ranking_genders,
     repeater_status,
     staffable,
+    without_pins,
 )
 
 
@@ -126,3 +127,9 @@ def test_rankers_at_placement_counts_rankers_of_the_office_course():
     prefs = [("T2", "A"), ("T3", "A"), ("T4", "B")]
     placed = {"T1": "A", "T5": "C"}
     assert rankers_at_placement(["T1", "T5"], placed, prefs) == [0, 2]
+
+
+def test_without_pins_removes_only_the_named_incumbencies(toy_cycle):
+    teachers = {t.teacher_id: t for t in without_pins(toy_cycle, {"T1000"}).teachers}
+    assert teachers["T1000"].incumbent_course_id is None
+    assert teachers["T1004"].incumbent_course_id == "INTL-2"

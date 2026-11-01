@@ -194,33 +194,55 @@ def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str,
     return out
 
 
-def in_some_optimum(
+def placement_costs(
     cycle: Cycle,
     rules: list[dict],
     pairs: list[tuple[str, str]],
     exclude=frozenset(),
     time_limit=10.0,
-) -> dict[tuple[str, str], bool]:
-    """Is each (teacher_id, course_id) placement in at least one optimal solution?
+) -> dict[tuple[str, str], int | None]:
+    """Preference score lost by forcing each (teacher_id, course_id); None if hard rules forbid it.
 
-    True = the rules allow it at no cost to the objective, so they can't count it as wrong.
+    Measured on the primary score, so a fallback that only uses up the secondary term costs 0.
     """
     base = solve_optimal(cycle, rules, exclude=exclude, time_limit=time_limit)
     if base.status != "optimal":
         raise RuntimeError(f"no optimum to compare with: base solve was {base.status}")
+    assert base.primary_value is not None  # always set when status is "optimal"
     ctx = build_model(cycle, rules, exclude=exclude)
-    out = {}
+    out: dict[tuple[str, str], int | None] = {}
     for tid, cid in pairs:
         model = ctx.model.clone()
         model.add(model.get_bool_var_from_proto_index(ctx.x[(tid, cid)].index) == 1)
         solver, code = _solve(model, time_limit)
         if code == cp_model.INFEASIBLE:
-            out[(tid, cid)] = False
+            out[(tid, cid)] = None
         elif code == cp_model.OPTIMAL:
-            out[(tid, cid)] = round(solver.objective_value) == base.value
+            out[(tid, cid)] = base.primary_value - round(
+                solver.value(sum(ctx.objective))
+            )
         else:
             raise RuntimeError(f"timed out checking {tid}")
     return out
+
+
+def min_fallbacks(
+    cycle: Cycle, rules: list[dict], exclude=frozenset(), time_limit=60.0
+) -> int | None:
+    """Fewest placements into unranked courses the hard rules allow, ignoring preference score.
+
+    Needs rule 11 among ``rules``. Each newly known gender can only keep or raise this. None if the
+    hard rules can't be met at all.
+    """
+    ctx = build_model(cycle, rules, exclude=exclude)
+    ctx.model.clear_objective()
+    ctx.model.maximize(sum(ctx.secondary))
+    solver, code = _solve(ctx.model, time_limit)
+    if code == cp_model.INFEASIBLE:
+        return None
+    if code != cp_model.OPTIMAL:
+        raise RuntimeError("timed out finding the fewest fallbacks")
+    return -round(solver.objective_value)
 
 
 def diagnose(cycle, rules) -> dict:

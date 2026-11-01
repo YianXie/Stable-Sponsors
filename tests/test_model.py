@@ -10,10 +10,11 @@ from stable_sponsors.model import (
     check_feasibility,
     determinacy,
     diagnose,
-    in_some_optimum,
     load_hard_rules,
     load_rules,
+    min_fallbacks,
     objective_expr,
+    placement_costs,
     solve_optimal,
 )
 from stable_sponsors.rules.context import build_ctx
@@ -247,17 +248,40 @@ def test_excluding_a_deferred_rule_is_reported_as_off(tmp_path, capsys):
     assert "already off" in capsys.readouterr().out
 
 
-def test_in_some_optimum_finds_each_side_of_a_tie():
+def test_placement_costs_measure_lost_preference_score():
+    # A and B each run with their two rankers, 2 x 27 points each. C has no rankers.
     cycle = _cycle(
-        [("T1", "A", 1), ("T2", "D", 1), ("T3", "D", 1)],
-        [_course("A"), _course("D", 4, 4)],
+        [("T1", "A", 1), ("T2", "A", 1), ("T3", "B", 1), ("T4", "B", 1)],
+        [_course("A"), _course("B"), _course("C")],
     )
-    pairs = [("T2", "A"), ("T3", "A"), ("T1", "D")]
-    out = in_some_optimum(cycle, _rules(), pairs, exclude=frozenset({4}))
-    assert out == {("T2", "A"): True, ("T3", "A"): True, ("T1", "D"): False}
+    out = placement_costs(
+        cycle, _rules(), [("T1", "A"), ("T1", "C")], exclude=frozenset({4})
+    )
+    assert out[("T1", "A")] == 0
+    # T1 on C stops A running, and C needs a second sponsor from A (T2): both lose 27
+    assert out[("T1", "C")] == 54
 
 
-def test_in_some_optimum_respects_hard_rules():
+def test_placement_cost_ignores_the_fallback_penalty():
+    # T2 on A is a fallback: it costs nothing in preference score, though secondary falls by 1.
+    cycle = _short_course_cycle()
+    assert placement_costs(cycle, _rules(), [("T2", "A")], exclude=frozenset({4})) == {
+        ("T2", "A"): 0
+    }
+
+
+def test_placement_cost_is_none_when_hard_rules_forbid_it():
     # rule 4 on: an unranked course is out of reach in every solution
     cycle = _short_course_cycle()
-    assert in_some_optimum(cycle, _rules(), [("T2", "A")]) == {("T2", "A"): False}
+    assert placement_costs(cycle, _rules(), [("T2", "A")]) == {("T2", "A"): None}
+
+
+def test_min_fallbacks_counts_what_the_hard_rules_force():
+    assert min_fallbacks(_short_course_cycle(), _rules(), frozenset({4})) == 0
+    # With the course set fixed to A running, 3 seats and 1 ranker force 2 fallbacks.
+    cycle = _cycle(
+        [("T1", "A", 7, "sg"), ("T2", "D", 1), ("T3", "D", 1)],
+        [_course("A", 3, 3), replace(_course("D", 4, 4), ran=False)],
+    )
+    rule_10 = {"id": 10, "class": "hard", "status": "assumed", "params": {}}
+    assert min_fallbacks(cycle, _rules() + [rule_10], frozenset({4})) == 2
