@@ -84,3 +84,13 @@ Gates for the 2026-10-28 interview, written before `interview_checks` or `course
 - **G2** (Q5 consistent with the data): the 3 "enough rankers" courses drop to 0 once 1M/1F is applied. If not, the follow-up email asks about the other reason.
 - **G3** (conditional rule 0 needed): any `incumbent_unrun` > 0. Prediction: 0 for 2027, since R3 was feasible with rules 0 and 10 together.
 - **G4** (build Task 8, language requirement): at least 2 rule-4 or rule-0 residuals on `CHIN-1`, `FRAN-1` or `SPAI-1`. The plan listed France and Spain; the interview adds Chinese, and the three courses are named directly because a country can't identify them.
+
+Gate outcomes (`interview_checks`, `course_set_check`, 2027):
+
+- **G1 failed.** 4 / 12 rule-4 residuals had any unrun choice (4 `some_unrun`, 0 `all_unrun`); 8 / 12 had every ranked course run. Task 6 is skipped: rule 4 stays hard, rule 11 stays deferred, and the 12 residuals stay unresolved. Own choices not running can't explain most of them.
+- **G1b failed.** 33% of violators had an unrun choice, against 40% (34 / 84) of submitters placed in a course they ranked. The 4 are no more than chance would give.
+- **G2 failed, but it can't test gender.** All 3 "enough rankers" courses stay staffable, yet none of their unplaced rankers carries a form label, so `staffable` treats them all as unknown. Whether gender explains these courses needs the office's data.
+- **G3 as predicted.** 0 `incumbent_unrun`. No conditional rule 0 for 2027. Of 3 repeaters with a discontinued course, 1 submitted; 2 repeaters whose course ran also submitted, unexplained.
+- **G4 failed.** 0 residuals on `CHIN-1`, `FRAN-1` or `SPAI-1`. Task 8 is skipped: rule 12 stays deferred and cannot affect the residuals. "Ideally both" stays a tie-break candidate.
+
+Added after seeing the above, so exploratory rather than a gate: M-011 doesn't fit most unrun courses. Every one of the 13 had at least 1 ranker, 11 had at least 3, and the most had 15. On the assumed scoring, 9 / 13 had enough teachers who would have preferred the course to their placement (0 / 39 of those rankings carry a form label, so gender is unknown). The one course the office gave as an example of no sign-ups had 5 rankers, 2 of them unplaced. Sponsor shortfall can't be the whole story: a cap on the number of courses, or decisions made before sign-up, would fit better. Rule 10 stays `contradicted` because the office said so, but the data don't confirm that account.

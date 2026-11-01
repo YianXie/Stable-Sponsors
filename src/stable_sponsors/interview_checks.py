@@ -6,6 +6,7 @@ Three counts that gate later model changes (thresholds in docs/encoding-decision
     (b) repeaters by what happened to their incumbent course, and whether they submitted
     (c) residuals on language immersion courses
     (d) how many teachers ranked the courses that did not run
+    (e) whether teachers who preferred those courses could have staffed them
 
 Reads inputs and observed placements only. Console output is counts and trip codes; gender and
 language are never printed per teacher.
@@ -15,11 +16,12 @@ language are never printed per teacher.
 
 import argparse
 from collections import Counter
+from pathlib import Path
 from typing import Literal
 
-from stable_sponsors.compare import violations
+from stable_sponsors.compare import claim_scores, violations
 from stable_sponsors.data import Cycle, load_observed_placements
-from stable_sponsors.model import load_cycle_from_config
+from stable_sponsors.model import load_cycle_from_config, load_rules
 from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 
 Origin = Literal["all_unrun", "some_unrun", "none_unrun"]
@@ -76,10 +78,32 @@ def repeater_status(cycle: Cycle) -> Counter[tuple[str, bool]]:
     return out
 
 
+def preferring_rankers(
+    prefs: list[tuple[str, str, str | None]],
+    placed: dict[str, str],
+    scores: dict[tuple[str, str], int],
+    incumbent: dict[str, str],
+    unrun: set[str],
+) -> dict[str, list[tuple[str, str | None]]]:
+    """Unrun course -> (teacher_id, slot_gender) of rankers who score more on it than where placed.
+
+    ``prefs`` holds (teacher_id, course_id, slot_gender). Unplaced scores 0, and a repeater on
+    their incumbent course isn't a candidate. Depends on the assumed weights in ``scores``.
+    """
+    out: dict[str, list[tuple[str, str | None]]] = {}
+    for tid, cid, gender in prefs:
+        if cid not in unrun or placed.get(tid) == incumbent.get(tid, ""):
+            continue
+        if scores[(tid, cid)] > scores.get((tid, placed.get(tid, "")), 0):
+            out.setdefault(cid, []).append((tid, gender))
+    return out
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument("--cycle", default=2027, type=int)
+    ap.add_argument("--rules", default="config/rules-2027.yaml")
     ap.add_argument(
         "--language-courses",
         default=LANGUAGE_COURSES,
@@ -144,6 +168,22 @@ def main(argv: list[str] | None = None) -> None:
     print("\n(d) courses that did not run, by number of distinct rankers")
     for n, k in sorted(Counter(len(rankers.get(c, ())) for c in unrun).items()):
         print(f"    {n} ranker(s): {k}")
+
+    # Rule ids 1 and 6 are the same in both rule files; the weights are assumed.
+    scores = claim_scores(cycle, load_rules(Path(args.rules)))
+    prefs = [(p.teacher_id, p.course_id, p.slot_gender) for p in cycle.preferences]
+    incumbent = {
+        t.teacher_id: t.incumbent_course_id
+        for t in cycle.teachers
+        if t.is_repeater and t.incumbent_course_id is not None
+    }
+    wanting = preferring_rankers(prefs, placed, scores, incumbent, set(unrun))
+    enough = [c for c, rows in wanting.items() if staffable(rows, 1, 1, 2)]
+    labelled = sum(g is not None for rows in wanting.values() for _, g in rows)
+    total = sum(len(rows) for rows in wanting.values())
+    print("\n(e) unrun courses, teachers who score more on them than where placed")
+    print(f"    can cover 1M/1F and 2 sponsors: {len(enough)} / {len(unrun)}")
+    print(f"    of those rankings, carrying a form label: {labelled} / {total}")
 
 
 if __name__ == "__main__":

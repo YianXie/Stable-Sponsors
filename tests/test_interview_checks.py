@@ -2,6 +2,7 @@ from dataclasses import replace
 
 from stable_sponsors.interview_checks import (
     fallback_origin,
+    preferring_rankers,
     repeater_status,
     staffable,
 )
@@ -76,3 +77,24 @@ def test_repeater_status_marks_submitters(toy_cycle):
     )
     s = repeater_status(replace(toy_cycle, teachers=teachers))
     assert s[("incumbent_ran", True)] == 1
+
+
+def test_preferring_rankers_keeps_those_who_would_gain():
+    prefs = [
+        ("T1", "X", "male"),  # unplaced: any ranked course beats that
+        ("T2", "X", None),  # scores more on X than on A
+        ("T3", "X", "male"),  # scores less on X than on A
+        ("T4", "X", None),  # repeater on their incumbent course: not a candidate
+        ("T5", "A", None),  # A ran
+    ]
+    placed = {"T2": "A", "T3": "A", "T4": "B", "T5": "A"}
+    scores = {
+        ("T1", "X"): 5,
+        ("T2", "X"): 5,
+        ("T2", "A"): 3,
+        ("T3", "X"): 3,
+        ("T3", "A"): 5,
+        ("T4", "X"): 7,
+    }
+    out = preferring_rankers(prefs, placed, scores, {"T4": "B"}, unrun={"X"})
+    assert out == {"X": [("T1", "male"), ("T2", None)]}
