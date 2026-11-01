@@ -68,7 +68,7 @@ Changes: PHIL-4's min and max sponsor slot is manually set to 3 in `course_param
 
 **2026-10-30**
 
-Interview of 2026-10-28 recorded in `docs/interview-2026-10-28.md` (status `reported`; read from the transcript, not checked against the audio). New knowledge rows M-008–M-014, diff rows 15–21.
+Interview of 2026-10-28 recorded in `docs/interview-2026-10-28.md`, kept local and gitignored (status `reported`; read from the transcript, not checked against the audio). New knowledge rows M-008–M-014, diff rows 15–21.
 Rule 10 is `contradicted` (M-011: courses drop when too few sponsors sign up) and inactive. Rules as of report v2.3 are frozen in `config/rules-2027-v2.3.yaml`; `--rules config/rules-2027-v2.3.yaml` replays R3 (2224, 81 / 46 / 11).
 M-011 contradicts a fixed set of courses, not a fixed number. Courses are sized from enrolment at 20 students each, so the count may still be set by enrolment. Models without rule 10 leave the count free, which is an assumption.
 The plan's wording of M-012 ("otherwise a mistake") and M-013 ("most unranked placements") went beyond the transcript, so the rows say what was said. An independent check of the write-up against the transcript also softened min = max (Q1) and the hard language rule (Q4), and added that some courses are off before sign-up (Q5).

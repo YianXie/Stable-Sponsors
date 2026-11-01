@@ -47,7 +47,7 @@ Run in this order. The scripts read `config/pseudonymize.yaml` by default; most 
 Diagnostics:
 
 - `uv run python -m stable_sponsors.compare` counts rule violations in the office's own placements.
-- `uv run python -m stable_sponsors.interview_checks` counts how far the data agree with the 2026-10-28 office interview. See [`docs/interview-2026-10-28.md`](docs/interview-2026-10-28.md).
+- `uv run python -m stable_sponsors.interview_checks` counts how far the data agree with the 2026-10-28 office interview. The interview notes (`docs/interview-*.md`) are kept local and gitignored, like the other meeting notes.
 - `uv run python -m stable_sponsors.course_set_check --cycle 2027` tests whether the course set was fixed before sponsors were allocated (rule 10).
 
 See [`docs/pseudonymization.md`](docs/pseudonymization.md) for the full pipeline manual. Some script paths in it are out of date: the scripts now live under `src/stable_sponsors/pseudonymize/`.
