@@ -283,7 +283,8 @@ def unranked_overlap(
 
     ``office`` and ``model``: submitters each placed in a course they didn't rank (a repeater's
     incumbent course doesn't count). ``same_course``: in both, on the same course.
-    ``both_elsewhere``: in both, on different courses. Lists are sorted teacher IDs.
+    ``both_elsewhere``: in both, on different courses. Those lists are sorted teacher IDs.
+    ``courses_in_common``: sorted course IDs where both made such a placement, whoever it was.
     """
     submitters = {tid for tid, _ in scores}
 
@@ -305,6 +306,7 @@ def unranked_overlap(
         "model": sorted(m),
         "same_course": sorted(same),
         "both_elsewhere": sorted(both - same),
+        "courses_in_common": sorted({office[t] for t in o} & {model[t] for t in m}),
     }
 
 
@@ -448,6 +450,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  by the model:                    {len(overlap['model']):>4}")
     print(f"    same teacher, same course:     {len(overlap['same_course']):>4}")
     print(f"    same teacher, other course:    {len(overlap['both_elsewhere']):>4}")
+    print(f"    courses both used this way:    {len(overlap['courses_in_common']):>4}")
     print(
         "\ncontested match/mismatch reflects one arbitrary optimal solution: not evidence."
     )

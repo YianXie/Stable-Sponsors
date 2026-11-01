@@ -300,3 +300,15 @@ def test_unranked_overlap_compares_office_and_model_fallbacks():
     assert out["model"] == ["T1", "T2", "T3"]
     assert out["same_course"] == ["T1"]
     assert out["both_elsewhere"] == ["T2"]
+
+
+def test_unranked_overlap_counts_a_course_both_used_with_different_teachers():
+    scores = {("T1", "A"): 5, ("T2", "A"): 5}
+    office = {"T1": "B", "T2": "A"}
+    model = {
+        "T1": "A",
+        "T2": "B",
+    }  # the model's fallback is T2 on B, the office's is T1 on B
+    out = unranked_overlap(model, office, scores, {})
+    assert out["same_course"] == []
+    assert out["courses_in_common"] == ["B"]
