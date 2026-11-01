@@ -60,7 +60,7 @@ Changes: PHIL-4's min and max sponsor slot is manually set to 3 in `course_param
 `review` sorts determined mismatches into 5 categories, each teacher into the first that fits. A teacher's claim on a course is its score in the objective (rule 1 best-rank weight + rule 6 best-round bonus); unranked or unplaced scores 0, and a repeater's incumbent course beats any ranking.
 
 1. Repeater not on old course: a repeater with an incumbent course (discontinued courses don't count).
-2. Placed in unranked course: a submitter that the office or the model placed in a course they didn't rank.
+2. Placed in unranked course: a submitter that the office or the model placed in a course they didn't rank. Split on 2026-11-01 into "own choices did not run" (at least one course they ranked did not run; consistent with a switch or stand-by, M-013) and "own choices ran". The first doesn't show a switch happened: a teacher who ranked 7 courses often has one that didn't run.
 3. Non-submitter ahead of submitter: either side of an office placement where a non-submitter holds a course that a submitter ranked and has a higher claim on than on their own office placement. A repeater on their incumbent course is not "ahead".
 4. Unexplained tie: the teacher's claim is the same on the office's and the model's placement, so the encoded rules don't prefer either for them.
 5. Other.

@@ -26,6 +26,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
+from stable_sponsors.compare import fallback_origin
 from stable_sponsors.data import Preference, Teacher, read_csv
 from stable_sponsors.model import (
     DETERMINACY_KEY,
@@ -166,9 +167,12 @@ INCUMBENT_CLAIM = (
     10**6
 )  # a repeater's claim to their incumbent course beats any ranking
 
+UNRANKED_OWN_UNRUN = "unranked: own choices did not run"  # consistent with M-013
+UNRANKED_OWN_RAN = "unranked: own choices ran"
 MISMATCH_CATEGORIES = (
     "repeater not on old course",
-    "placed in unranked course",
+    UNRANKED_OWN_UNRUN,
+    UNRANKED_OWN_RAN,
     "non-submitter ahead of submitter",
     "unexplained tie",
     "other",
@@ -204,11 +208,14 @@ def classify_mismatches(
     office: Assignment,
     teachers: tuple[Teacher, ...],
     scores: dict[tuple[str, str], int],
+    ran: set[str],
 ) -> dict[str, list[str]]:
     """Sort mismatched teachers into MISMATCH_CATEGORIES, each into the first one that fits.
 
     1. A repeater with an incumbent course (one discontinued this year doesn't count).
-    2. A submitter placed by the office or the model in a course they didn't rank.
+    2. A submitter placed by the office or the model in a course they didn't rank, split by
+       whether any course they ranked did not run (``ran``: the courses that ran). That split is
+       consistent with a switch or stand-by (M-013); it doesn't show one happened.
     3. Either side of an office placement where a non-submitter holds a seat on a course that a
        submitter ranked and would score more on than where the office put them (unplaced
        scores 0). A repeater holding their own incumbent course is not "ahead".
@@ -218,6 +225,9 @@ def classify_mismatches(
 
     ``scores`` comes from ``claim_scores``; its keys also tell who submitted and what they ranked.
     """
+    ranked: dict[str, set[str]] = {}
+    for tid, cid in scores:
+        ranked.setdefault(tid, set()).add(cid)
     incumbent = {
         t.teacher_id: t.incumbent_course_id
         for t in teachers
@@ -246,7 +256,11 @@ def classify_mismatches(
         if tid in incumbent:
             k = "repeater not on old course"
         elif tid in submitters and any((tid, c) not in scores for c in placed):
-            k = "placed in unranked course"
+            k = (
+                UNRANKED_OWN_RAN
+                if fallback_origin(ranked[tid], ran) == "none_unrun"
+                else UNRANKED_OWN_UNRUN
+            )
         elif tid in ahead:
             k = "non-submitter ahead of submitter"
         elif claim(tid, model[tid]) == claim(tid, office.get(tid)):
@@ -312,7 +326,12 @@ def main(argv: list[str] | None = None) -> None:
         cycle.preferences, load_rules(Path(run["rules_file"])), run["excluded"]
     )
     s["determined_mismatch_categories"] = classify_mismatches(
-        c["determined_mismatch"], assignment, office, cycle.teachers, scores
+        c["determined_mismatch"],
+        assignment,
+        office,
+        cycle.teachers,
+        scores,
+        {x.course_id for x in cycle.courses if x.ran},
     )
 
     print(

@@ -17,25 +17,14 @@ language are never printed per teacher.
 import argparse
 from collections import Counter
 from pathlib import Path
-from typing import Literal
 
-from stable_sponsors.compare import claim_scores, violations
+from stable_sponsors.compare import ORIGINS, claim_scores, fallback_origin, violations
 from stable_sponsors.data import Cycle, load_observed_placements
 from stable_sponsors.model import load_cycle_from_config, load_rules
 from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
 
-Origin = Literal["all_unrun", "some_unrun", "none_unrun"]
-ORIGINS: tuple[Origin, ...] = ("all_unrun", "some_unrun", "none_unrun")
 # The 2027 catalogue's language immersion courses. A country doesn't identify them: China has 8 courses.
 LANGUAGE_COURSES = "CHIN-1,FRAN-1,SPAI-1"
-
-
-def fallback_origin(ranked: set[str], ran: set[str]) -> Origin:
-    """How many of the courses a teacher ranked did not run."""
-    running = ranked & ran
-    if not running:
-        return "all_unrun"
-    return "none_unrun" if running == ranked else "some_unrun"
 
 
 def staffable(

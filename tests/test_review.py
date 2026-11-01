@@ -219,12 +219,18 @@ def test_classify_mismatches_one_teacher_per_category():
         "T7": "E",
     }
     out = classify_mismatches(
-        sorted(model), model, office, teachers, claim_scores(prefs, RULES, [])
+        sorted(model),
+        model,
+        office,
+        teachers,
+        claim_scores(prefs, RULES, []),
+        ran=set("ABCDEFGH"),
     )
     assert list(out) == list(MISMATCH_CATEGORIES)
     assert out == {
         "repeater not on old course": ["T1"],
-        "placed in unranked course": ["T2"],
+        "unranked: own choices did not run": [],
+        "unranked: own choices ran": ["T2"],
         "non-submitter ahead of submitter": ["T3", "T4"],  # both sides of the pair
         "unexplained tie": ["T7"],  # non-submitter: C and E both score 0
         "other": [
@@ -243,5 +249,33 @@ def test_incumbent_repeater_is_not_ahead_of_a_submitter():
         {"T1": "A", "T2": "B"},
         teachers,
         claim_scores(prefs, RULES, []),
+        ran={"A", "B"},
     )
     assert out["other"] == ["T2"]
+
+
+def test_unranked_with_unrun_choices_is_fallback():
+    teachers = (teacher("T1"),)
+    scores = {("T1", "A"): 5, ("T1", "B"): 4}
+    out = classify_mismatches(
+        ["T1"], {"T1": "A"}, {"T1": "C"}, teachers, scores, ran={"B", "C"}
+    )
+    assert out["unranked: own choices did not run"] == ["T1"]
+    assert out["unranked: own choices ran"] == []
+
+
+def test_unranked_with_all_choices_unrun_is_fallback():
+    teachers = (teacher("T1"),)
+    out = classify_mismatches(
+        ["T1"], {"T1": None}, {"T1": "C"}, teachers, {("T1", "A"): 5}, ran={"C"}
+    )
+    assert out["unranked: own choices did not run"] == ["T1"]
+
+
+def test_unranked_with_running_choices_is_separate():
+    teachers = (teacher("T1"),)
+    out = classify_mismatches(
+        ["T1"], {"T1": "A"}, {"T1": "C"}, teachers, {("T1", "A"): 5}, ran={"A", "C"}
+    )
+    assert out["unranked: own choices ran"] == ["T1"]
+    assert out["unranked: own choices did not run"] == []
