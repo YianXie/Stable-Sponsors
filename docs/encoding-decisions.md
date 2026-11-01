@@ -158,3 +158,9 @@ Predictions, written before these runs (by the assistant, on the same terms as P
 - P14. R5's determined-and-match count is at least R4's 36.
 - P15. R10 is feasible and uses fewer than 12 fallback placements.
 - P16. R9 uses fewer fallback placements than R5, since gender is one reason to need them.
+
+Fallback run results, logged in report §5.4: R5 `2026-11-01T185701`, R8 `T190313`, R9 `T190556`, R10 `T190802`; R3′ and R4 re-run with the same results (`T185606`, `T185611`).
+
+Prediction outcomes: P9 failed (R5 uses 0 fallbacks, and is identical to R4). P10 held. P11 failed (51). P12 failed (0 of the 12 are in any optimal solution). P13 held (0). P14 held (36). P15 held (3). P16 failed (0 and 0).
+
+Reading: with the course set free nothing needs a fallback. With the office's course set, rule 5 forces 3, none matching the office's teachers or courses; without rule 5 it needs none. So a last-resort fallback doesn't reproduce the 12. R4 stays the primary model. This corrects the "first evidence for some fallback" entry above: the infeasibility is real, but it asks for 3 placements, elsewhere.
