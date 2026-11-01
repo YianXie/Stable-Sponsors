@@ -9,8 +9,8 @@ actually happened would make reproduction succeed for a meaningless reason.
 Writes to private_root/params/ (outside the repo, never inside derived/, so
 re-running the pseudonymisation pipeline can't overwrite your hand edits).
 
-Every value it fills in is a placeholder marked status=assumed, with a
-`source` saying where it came from. Edit the rows by hand as the office
+Every value it fills in is a placeholder marked status=assumed (inferred for a
+gender read from the form), with a `source` saying where it came from. Edit the rows by hand as the office
 confirms things, changing status to confirmed or documented.
 
 Re-running is safe: rows that already exist in the output file are kept

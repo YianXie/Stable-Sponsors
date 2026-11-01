@@ -73,7 +73,7 @@ tools/               make_synthetic.py (fake raw data), inspect_structure.py
 
 ## The rules model
 
-`config/rules-2027.yaml` is the rule specification. Each rule has an `id`, a `class` (`hard`, `priority` or `tiebreak`), a `status` (`documented`, `assumed` or `deferred`) and a `source` that points to an entry in the procedure diff. Every non-deferred rule has a matching encoder in `src/stable_sponsors/rules/`, registered with `@register(rule_id)`. The model uses booleans `x[(teacher, course)]` for assignments and `y[course]` for whether a course runs.
+`config/rules-2027.yaml` is the rule specification. Each rule has an `id`, a `class` (`hard`, `priority` or `tiebreak`), a `status` (`documented`, `reported`, `assumed`, `deferred` or `contradicted`) and a `source` that points to an entry in the procedure diff. Every non-deferred rule has a matching encoder in `src/stable_sponsors/rules/`, registered with `@register(rule_id)`. The model uses booleans `x[(teacher, course)]` for assignments and `y[course]` for whether a course runs.
 
 Every modelling assumption is recorded in [`docs/encoding-decisions.md`](docs/encoding-decisions.md).
 

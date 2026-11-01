@@ -3,6 +3,8 @@ from dataclasses import replace
 from stable_sponsors.interview_checks import (
     fallback_origin,
     preferring_rankers,
+    rankers_at_placement,
+    ranking_genders,
     repeater_status,
     staffable,
 )
@@ -39,6 +41,11 @@ def test_one_ranker_ranking_twice_is_one_teacher():
 def test_teacher_with_conflicting_labels_fills_either_slot():
     # T2 ranked this course under both labels: their gender is unknown, not "both"
     assert staffable([("T1", "male"), ("T2", "male"), ("T2", "female")], 1, 1, 2)
+
+
+def test_known_label_beats_a_missing_one():
+    # T1 ranked this course in two rounds, one labelled and one not: still a known male
+    assert not staffable([("T1", "male"), ("T1", None), ("T2", "male")], 1, 1, 2)
 
 
 def test_too_few_teachers_is_not_staffable_even_if_slots_are_covered():
@@ -98,3 +105,24 @@ def test_preferring_rankers_keeps_those_who_would_gain():
     }
     out = preferring_rankers(prefs, placed, scores, {"T4": "B"}, unrun={"X"})
     assert out == {"X": [("T1", "male"), ("T2", None)]}
+
+
+def test_ranking_genders_use_the_teacher_not_the_label_on_that_course(toy_cycle):
+    # toy: T1001 is male (params); their SING-1 ranking carries no slot label
+    assert ("T1001", "SING-1", "male") in ranking_genders(toy_cycle)
+
+
+def test_ranking_genders_leave_an_unknown_teacher_unknown(toy_cycle):
+    teachers = tuple(
+        replace(t, gender=None) if t.teacher_id == "T1001" else t
+        for t in toy_cycle.teachers
+    )
+    rows = ranking_genders(replace(toy_cycle, teachers=teachers))
+    # the INTL-1 ranking is labelled male, but gender comes only from the teacher's row
+    assert ("T1001", "INTL-1", None) in rows
+
+
+def test_rankers_at_placement_counts_rankers_of_the_office_course():
+    prefs = [("T2", "A"), ("T3", "A"), ("T4", "B")]
+    placed = {"T1": "A", "T5": "C"}
+    assert rankers_at_placement(["T1", "T5"], placed, prefs) == [0, 2]

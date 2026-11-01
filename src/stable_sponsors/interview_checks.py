@@ -6,7 +6,7 @@ Three counts that gate later model changes (thresholds in docs/encoding-decision
     (b) repeaters by what happened to their incumbent course, and whether they submitted
     (c) residuals on language immersion courses
     (d) how many teachers ranked the courses that did not run
-    (e) whether teachers who preferred those courses could have staffed them
+    (e) whether teachers who preferred those courses could have staffed them, course by course
 
 Reads inputs and observed placements only. Console output is counts and trip codes; gender and
 language are never printed per teacher.
@@ -35,18 +35,35 @@ def staffable(
 ) -> bool:
     """Can these rankers staff a course: enough distinct teachers, and the slots covered?
 
-    Each ranker is (teacher_id, slot_gender). A teacher with no label, or with both labels on this
-    course, can fill either slot: unknown is not "no".
+    Each ranker is (teacher_id, gender). A teacher with no known gender, or with both on record, can
+    fill either slot: unknown is not "no".
     """
-    labels: dict[str, set[str | None]] = {}
+    labels: dict[str, set[str]] = {}
     for tid, gender in rankers:
-        labels.setdefault(tid, set()).add(gender)
-    known = Counter(
-        next(iter(g)) if len(g) == 1 and None not in g else None
-        for g in labels.values()
-    )
+        labels.setdefault(tid, set()).update({gender} if gender else set())
+    known = Counter(next(iter(g)) if len(g) == 1 else None for g in labels.values())
     short = max(male_slots - known["male"], 0) + max(female_slots - known["female"], 0)
     return len(labels) >= min_sponsors and short <= known[None]
+
+
+def ranking_genders(cycle: Cycle) -> list[tuple[str, str, str | None]]:
+    """(teacher_id, course_id, gender) for each ranking, using the teacher's gender.
+
+    A slot label only appears on courses the form showed as gendered, so it can't be read per
+    course: no unrun course has one. The teacher's gender (inferred in params) is what rule 5 uses.
+    """
+    gender = {t.teacher_id: t.gender for t in cycle.teachers}
+    return [
+        (p.teacher_id, p.course_id, gender[p.teacher_id]) for p in cycle.preferences
+    ]
+
+
+def rankers_at_placement(
+    ids: list[str], placed: dict[str, str], prefs: list[tuple[str, str]]
+) -> list[int]:
+    """Sorted: how many teachers ranked the course each of these teachers was placed in."""
+    rankers = Counter(cid for _, cid in set(prefs))
+    return sorted(rankers[placed[tid]] for tid in ids)
 
 
 def repeater_status(cycle: Cycle) -> Counter[tuple[str, bool]]:
@@ -129,6 +146,12 @@ def main(argv: list[str] | None = None) -> None:
     kinds = {c.course_id: c.course_type for c in cycle.courses}
     pools = Counter(kinds[placed[t]] for t in violators)
     print(f"    placed by the office in: {dict(sorted(pools.items()))}")
+    landed = rankers_at_placement(
+        sorted(violators),
+        placed,
+        [(p.teacher_id, p.course_id) for p in cycle.preferences],
+    )
+    print(f"    rankers of the course each was placed in: {landed}")
 
     print("\n(b) repeaters: (status, submitted a form)")
     status = repeater_status(cycle)
@@ -157,22 +180,28 @@ def main(argv: list[str] | None = None) -> None:
     print("\n(d) courses that did not run, by number of distinct rankers")
     for n, k in sorted(Counter(len(rankers.get(c, ())) for c in unrun).items()):
         print(f"    {n} ranker(s): {k}")
+    ranks = Counter(p.rank for p in cycle.preferences if p.course_id in set(unrun))
+    print(f"    their rankings by rank: {dict(sorted(ranks.items()))}")
 
     # Rule ids 1 and 6 are the same in both rule files; the weights are assumed.
     scores = claim_scores(cycle, load_rules(Path(args.rules)))
-    prefs = [(p.teacher_id, p.course_id, p.slot_gender) for p in cycle.preferences]
     incumbent = {
         t.teacher_id: t.incumbent_course_id
         for t in cycle.teachers
         if t.is_repeater and t.incumbent_course_id is not None
     }
-    wanting = preferring_rankers(prefs, placed, scores, incumbent, set(unrun))
+    wanting = preferring_rankers(
+        ranking_genders(cycle), placed, scores, incumbent, set(unrun)
+    )
     enough = [c for c, rows in wanting.items() if staffable(rows, 1, 1, 2)]
-    labelled = sum(g is not None for rows in wanting.values() for _, g in rows)
-    total = sum(len(rows) for rows in wanting.values())
+    teachers = {t for rows in wanting.values() for t, _ in rows}
+    known = {t for rows in wanting.values() for t, g in rows if g is not None}
     print("\n(e) unrun courses, teachers who score more on them than where placed")
     print(f"    can cover 1M/1F and 2 sponsors: {len(enough)} / {len(unrun)}")
-    print(f"    of those rankings, carrying a form label: {labelled} / {total}")
+    print(f"    teachers with a known gender: {len(known)} / {len(teachers)}")
+    print(
+        "    per course, not jointly: a placed teacher who moved would leave their course short"
+    )
 
 
 if __name__ == "__main__":

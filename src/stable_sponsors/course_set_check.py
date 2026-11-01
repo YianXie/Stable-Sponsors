@@ -15,7 +15,7 @@ and trip codes; ``--list`` adds T### IDs.
 import argparse
 from collections import defaultdict
 
-from stable_sponsors.interview_checks import staffable
+from stable_sponsors.interview_checks import ranking_genders, staffable
 from stable_sponsors.model import load_cycle_from_config
 from stable_sponsors.pseudonymize.idmap import load_config, out_path
 from stable_sponsors.review import load_office
@@ -44,7 +44,7 @@ def gender_staffable(
 ) -> dict[str, bool]:
     """Unrun course -> can its unplaced rankers staff it with 1 male + 1 female?
 
-    ``prefs`` holds (teacher_id, course_id, slot_gender). The 1/1 comes from M-009, not from
+    ``prefs`` holds (teacher_id, course_id, gender). The 1/1 comes from M-009, not from
     course_params.csv, so this doesn't depend on whether the params have been refreshed.
     """
     rankers: dict[str, list[tuple[str, str | None]]] = defaultdict(list)
@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> None:
     demand = unrun_demand(unplaced, prefs, unrun)
     gender_ok = gender_staffable(
         unplaced,
-        [(p.teacher_id, p.course_id, p.slot_gender) for p in cycle.preferences],
+        ranking_genders(cycle),
         unrun,
         need,
     )
@@ -95,9 +95,15 @@ def main(argv: list[str] | None = None) -> None:
         m = need.get(cid)
         flag = "  <- enough unplaced rankers to staff it" if m and n >= m else ""
         ranks = ", ".join(f"{rnd}#{rank}" for _, rnd, rank in rows)
+        # never beside IDs: "no" would say that the two listed teachers share a gender
+        gender_col = (
+            ""
+            if args.list
+            else f"gender-staffable={'yes' if gender_ok[cid] else 'no'}  "
+        )
         print(
             f"  {cid}: {n} unplaced ranker(s), min sponsors {m if m else '?'}  "
-            f"gender-staffable={'yes' if gender_ok[cid] else 'no'}  [{ranks}]{flag}"
+            f"{gender_col}[{ranks}]{flag}"
         )
         if args.list:
             print(f"    {' '.join(sorted({tid for tid, _, _ in rows}))}")
@@ -107,10 +113,13 @@ def main(argv: list[str] | None = None) -> None:
             for c, rows in demand.items()
             if len({r[0] for r in rows}) >= (need.get(c) or DEFAULT_SPONSORS)
         ]
-        print(
-            f"\nenough unplaced rankers: {len(enough)}, of which gender-staffable: "
-            f"{sum(gender_ok[c] for c in enough)}"
-        )
+        print(f"\nenough unplaced rankers: {len(enough)}", end="")
+        if not args.list:
+            print(
+                f", of which gender-staffable: {sum(gender_ok[c] for c in enough)}",
+                end="",
+            )
+        print()
     if not demand:
         print(
             "  none: the data cannot separate 'course set fixed first' from 'cancelled for lack of sponsors'"

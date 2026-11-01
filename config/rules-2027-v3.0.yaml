@@ -3,7 +3,7 @@ schema_version: 1
 cycle: 2027
 source_docs:
   procedure: "Faculty Sponsor Allocation Process - Interim Semester, as received"
-  diff: "docs/procedure-diff-v1.0.md"
+  diff: "docs/procedure-diff-v1.1.md"
 
 rules:
   - id: 0
@@ -50,7 +50,7 @@ rules:
     params: {}
     source: "diff 13"
     status: assumed
-    notes: "Repeater's incumbent course counts as ranked; amendment supported by M-012 (repeaters are asked first, before open sign-up)."
+    notes: "Repeater's incumbent course counts as ranked; amendment supported by the interview (repeaters are asked first, before open sign-up; Q6)."
 
   - id: 5
     name: slot_gender
@@ -111,7 +111,7 @@ rules:
     params: {}
     source: "M-013; diff 20"
     status: deferred
-    notes: "Encoder pending the G1 gate."
+    notes: "Not built: gate G1 failed. Report v3.0 §6.3 has evidence G1 did not test."
 
   - id: 12
     name: language_at_least_one

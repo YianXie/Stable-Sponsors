@@ -95,11 +95,11 @@ Gate outcomes (`interview_checks`, `course_set_check`, 2027):
 
 Added after seeing the above, so exploratory rather than a gate: M-011 doesn't fit most unrun courses. Every one of the 13 had at least 1 ranker, 11 had at least 3, and the most had 15. On the assumed scoring, 9 / 13 had enough teachers who would have preferred the course to their placement (0 / 39 of those rankings carry a form label, so gender is unknown). The one course the office gave as an example of no sign-ups had 5 rankers, 2 of them unplaced. Sponsor shortfall can't be the whole story: a cap on the number of courses, or decisions made before sign-up, would fit better. Rule 10 stays `contradicted` because the office said so, but the data don't confirm that account.
 
-Gender params refreshed with `--refresh-cols gender male_slots female_slots`. Gender is inferred from the form's slot label (status `inferred`): 18 male, 34 female, 1 conflict left blank, 52 other submitters unknown, 34 non-submitters unknown. So 52 / 138 known, and a label only appears where a course showed a gendered slot. Every course is 1M/1F; PHIL-4 stays 3–3. The old params are in `params/backup/`. R3 still replays (rule 5 is off in the v2.3 file).
+Gender params refreshed with `--refresh-cols gender male_slots female_slots`. Gender is inferred from the form's slot label (status `inferred`): 18 male, 34 female. 86 unknown: 52 submitters (including 1 conflict left blank) and 34 non-submitters. So 52 / 138 known, and a label only appears where a course showed a gendered slot. Every course is 1M/1F; PHIL-4 stays 3–3. The old params are in `params/backup/`. R3 still replays (rule 5 is off in the v2.3 file).
 
 Prediction, written before running `compare` with rule 5: the office's allocation has 0 rule-5 violations. If it has more, either the rule isn't strict (described as a preference, M-009) or the labels are noisy, and rule 5 comes out of the primary run until the office answers.
 
-Rule 5 is `reported` and uses an at-most form, so partial data can't force a wrong placement: known males ≤ (max − female_slots)·y and known females ≤ (max − male_slots)·y. Unknowns are free. It only overlaps rule 9 where a course's maximum is small: with rule 9 off it still caps known sponsors.
+Rule 5 is `reported` and uses an at-most form, so a missing gender never blocks a placement: known males ≤ (max − female_slots)·y and known females ≤ (max − male_slots)·y. Unknowns are free. Partial data can still shift the optimum, because only known genders are constrained (R7 → R4). It only overlaps rule 9 where a course's maximum is small: with rule 9 off it still caps known sponsors.
 `compare` result: 0 rule-5 violations, as predicted. With 52 / 138 genders known this is a weak test: the label appears only on the courses the form showed as gendered.
 
 **2026-11-01, run matrix**
@@ -128,3 +128,12 @@ Runs, all `--optimize`, cycle 2027, lineage on, logged in report §5.4:
 | R7 | `rules-2027.yaml` | 5 | `2026-11-01T182012_model_run.json` |
 
 Prediction outcomes: P2 held (2224, 81 / 46 / 11). P3 failed: R4 runs 68, the same as R1, not fewer. P4 held (2406). P5 held (36). P6 held. P7 failed: R6 has 16 contested submitters against R4's 51, so equal bonuses removed ties rather than adding them. P8 held (2437, 68 courses).
+
+**Corrections after review, 2026-11-01**
+
+- **G2 and check (e) read the wrong gender.** They used the slot label on that course, which no unrun course has, so the check could never fail. The plan named `slot_gender`, but it predates teacher gender. Both now use each teacher's inferred gender, the same data as rule 5. G2: 2 of 3 courses stay staffable, 1 drops (only 2 of the 4 rankers known), so G2 still fails and no gate changes. Check (e): 8 / 13, not 9 / 13, with 11 / 19 teachers' gender known. The outcomes above stand except where this entry changes them.
+- **G1 tests one form of switching only:** a teacher whose own choice was short. It can't see someone who lost out on full courses and was asked to fill a short one. It also says nothing about a teacher placed in a course almost nobody ranked.
+- **New, exploratory:** rules 0, 4, 5 and 10 together are infeasible, and dropping any of rules 0, 4, 5, 8, 9 or 10 fixes it. So the office's course set can't be staffed under 1M/1F from ranked courses alone. This is the first evidence for some fallback, and it wasn't part of G1. The 12 violators landed on courses with 0, 0, 1, 3, 3, 3, 4, 4, 5, 12, 16 and 18 rankers.
+- **A ranking may not be a sign-up.** Of 76 rankings on unrun courses, 45 are at rank 5 to 7 and 6 at rank 1. So the "M-011 doesn't fit" entry above is too firm; report Finding 3 has the weaker wording.
+- **The fall from 48 to 36 is mostly rule 5.** Dropping rule 10 alone gives 46; rule 5 takes it to 36. 68 against 65 courses restates the placed count (3 + 67 × 2), so it's not separate evidence of a limit on courses.
+- `course_set_check --list` no longer prints gender-staffable next to T### IDs.
