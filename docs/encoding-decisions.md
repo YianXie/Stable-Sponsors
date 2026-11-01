@@ -163,4 +163,12 @@ Fallback run results, logged in report §5.4: R5 `2026-11-01T185701`, R8 `T19031
 
 Prediction outcomes: P9 failed (R5 uses 0 fallbacks, and is identical to R4). P10 held. P11 failed (51). P12 failed (0 of the 12 are in any optimal solution). P13 held (0). P14 held (36). P15 held (3). P16 failed (0 and 0).
 
-Reading: with the course set free nothing needs a fallback. With the office's course set, rule 5 forces 3, none matching the office's teachers or courses; without rule 5 it needs none. So a last-resort fallback doesn't reproduce the 12. R4 stays the primary model. This corrects the "first evidence for some fallback" entry above: the infeasibility is real, but it asks for 3 placements, elsewhere.
+Reading: a last-resort fallback doesn't reproduce the 12, and R4 stays the primary model. The corrections below qualify this.
+
+**Corrections after review of the fallback runs, 2026-11-01**
+
+- **The infeasibility may be a data artefact.** The fewest fallbacks on the office's course set is 3, 0 without rule 5, and 0 without the pins of the three rule-0 residuals (T026, T739, T798), falling 3, 2, 1, 0 as they're removed. Those are the records report §6.4 already suspects. This replaces the "first evidence for some fallback" entry above.
+- **The 3 is a floor on today's data, not a ceiling,** because each newly known gender can only keep or raise it. The free course set's 0 isn't settled for the same reason.
+- **"In some optimal solution" was the wrong measure.** It counted the fallback penalty as a cost, so with 0 fallbacks its answer was forced. `placement_costs` measures the preference score lost instead. All 12 still cost something: R5 6 to 30, R8 6 to 20, R9 5 to 27, R10 1 to 28, with six of R10's at 4 or fewer. Those are near misses that small weight changes could erase, not rejections.
+- **Overlap of R10's 3 with the office's was one solution's result.** Which teachers and courses carry the 3 varies across optima. `review` now labels those lines, and the report drops them.
+- Rule 11 tests last-resort fallbacks, not the switching the interview described.
