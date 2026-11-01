@@ -74,3 +74,13 @@ M-011 contradicts a fixed set of courses, not a fixed number. Courses are sized 
 The plan's wording of M-012 ("otherwise a mistake") and M-013 ("most unranked placements") went beyond the transcript, so the rows say what was said. An independent check of the write-up against the transcript also softened min = max (Q1) and the hard language rule (Q4), and added that some courses are off before sign-up (Q5).
 Rule 5's source corrected: the procedure's D-004 requires one sponsor of each gender, so "not in procedure" was wrong.
 Language immersion is a property of a course (`CHIN-1`, `FRAN-1`, `SPAI-1` in 2027), not of a country.
+
+**2026-11-01**
+
+Gates for the 2026-10-28 interview, written before `interview_checks` or `course_set_check` was run with these columns. (The 12 rule-4 residuals and the 3 "enough rankers" courses are known from report v2.3; their origin and gender mix are not.)
+
+- **G1** (build Task 6, fallback placements): at least 8 of the 12 rule-4 residuals are `all_unrun` or `some_unrun`.
+- **G1b** (how the report words G1): the violators' share of `all_unrun` + `some_unrun` is higher than the same share among submitters placed in a course they ranked. Added because someone who ranked 7 courses of which 13 / 78 didn't run often has one that didn't, so G1 can pass by chance. G1b doesn't affect the build. It decides whether the report may call G1 evidence for M-013.
+- **G2** (Q5 consistent with the data): the 3 "enough rankers" courses drop to 0 once 1M/1F is applied. If not, the follow-up email asks about the other reason.
+- **G3** (conditional rule 0 needed): any `incumbent_unrun` > 0. Prediction: 0 for 2027, since R3 was feasible with rules 0 and 10 together.
+- **G4** (build Task 8, language requirement): at least 2 rule-4 or rule-0 residuals on `CHIN-1`, `FRAN-1` or `SPAI-1`. The plan listed France and Spain; the interview adds Chinese, and the three courses are named directly because a country can't identify them.

@@ -1,0 +1,150 @@
+"""Evidence checks for the 2026-10-28 interview: do the data agree with what the office said?
+
+Three counts that gate later model changes (thresholds in docs/encoding-decisions.md):
+
+    (a) why the office's rule-4 violators may have ended up in an unranked course
+    (b) repeaters by what happened to their incumbent course, and whether they submitted
+    (c) residuals on language immersion courses
+    (d) how many teachers ranked the courses that did not run
+
+Reads inputs and observed placements only. Console output is counts and trip codes; gender and
+language are never printed per teacher.
+
+    uv run python -m stable_sponsors.interview_checks
+"""
+
+import argparse
+from collections import Counter
+from typing import Literal
+
+from stable_sponsors.compare import violations
+from stable_sponsors.data import Cycle, load_observed_placements
+from stable_sponsors.model import load_cycle_from_config
+from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
+
+Origin = Literal["all_unrun", "some_unrun", "none_unrun"]
+ORIGINS: tuple[Origin, ...] = ("all_unrun", "some_unrun", "none_unrun")
+# The 2027 catalogue's language immersion courses. A country doesn't identify them: China has 8 courses.
+LANGUAGE_COURSES = "CHIN-1,FRAN-1,SPAI-1"
+
+
+def fallback_origin(ranked: set[str], ran: set[str]) -> Origin:
+    """How many of the courses a teacher ranked did not run."""
+    running = ranked & ran
+    if not running:
+        return "all_unrun"
+    return "none_unrun" if running == ranked else "some_unrun"
+
+
+def staffable(
+    rankers: list[tuple[str, str | None]],
+    male_slots: int,
+    female_slots: int,
+    min_sponsors: int,
+) -> bool:
+    """Can these rankers staff a course: enough distinct teachers, and the slots covered?
+
+    Each ranker is (teacher_id, slot_gender). A teacher with no label, or with both labels on this
+    course, can fill either slot: unknown is not "no".
+    """
+    labels: dict[str, set[str | None]] = {}
+    for tid, gender in rankers:
+        labels.setdefault(tid, set()).add(gender)
+    known = Counter(
+        next(iter(g)) if len(g) == 1 and None not in g else None
+        for g in labels.values()
+    )
+    short = max(male_slots - known["male"], 0) + max(female_slots - known["female"], 0)
+    return len(labels) >= min_sponsors and short <= known[None]
+
+
+def repeater_status(cycle: Cycle) -> Counter[tuple[str, bool]]:
+    """Repeaters by ("incumbent_ran" | "incumbent_unrun" | "discontinued", submitted a form)."""
+    ran = {c.course_id for c in cycle.courses if c.ran}
+    submitters = {p.teacher_id for p in cycle.preferences}
+    out: Counter[tuple[str, bool]] = Counter()
+    for t in cycle.teachers:
+        if not t.is_repeater:
+            continue
+        if t.incumbent_course_id is None:
+            status = "discontinued"
+        elif t.incumbent_course_id in ran:
+            status = "incumbent_ran"
+        else:
+            status = "incumbent_unrun"
+        out[(status, t.teacher_id in submitters)] += 1
+    return out
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
+    ap.add_argument("--cycle", default=2027, type=int)
+    ap.add_argument(
+        "--language-courses",
+        default=LANGUAGE_COURSES,
+        help="comma-separated language immersion course IDs",
+    )
+    args = ap.parse_args(argv)
+
+    config = load_config(args.config)
+    cycle = load_cycle_from_config(config, args.cycle)
+    observed = load_observed_placements(
+        out_path(config, "derived") / "placements.csv", cycle
+    )
+    placed = {p.teacher_id: p.course_id for p in observed}
+    v = violations(cycle, observed)
+
+    ran = {c.course_id for c in cycle.courses if c.ran}
+    ranked: dict[str, set[str]] = {}
+    for p in cycle.preferences:
+        ranked.setdefault(p.teacher_id, set()).add(p.course_id)
+
+    # (a) with a comparison group: a teacher who ranked 7 courses often has one that didn't run,
+    # so a share among the violators means little on its own.
+    violators = set(v["4 only_ranked"])
+    others = {
+        tid for tid in ranked if tid not in violators and placed.get(tid) in ranked[tid]
+    }
+    print(f"(a) origin of rule-4 violators, cycle {args.cycle}")
+    print(f"    {'':<14}{'violators':>10}{'placed in ranked':>18}")
+    for origin in ORIGINS:
+        a = sum(fallback_origin(ranked[t], ran) == origin for t in violators)
+        b = sum(fallback_origin(ranked[t], ran) == origin for t in others)
+        print(f"    {origin:<14}{a:>10}{b:>18}")
+    print(f"    {'total':<14}{len(violators):>10}{len(others):>18}")
+    kinds = {c.course_id: c.course_type for c in cycle.courses}
+    pools = Counter(kinds[placed[t]] for t in violators)
+    print(f"    placed by the office in: {dict(sorted(pools.items()))}")
+
+    print("\n(b) repeaters: (status, submitted a form)")
+    status = repeater_status(cycle)
+    for key in sorted(status):
+        print(f"    {key[0]:<16} submitted={key[1]!s:<6}{status[key]:>4}")
+    print(f"    {'total':<33}{sum(status.values()):>4}")
+
+    language = {c.strip() for c in args.language_courses.split(",")}
+    residuals = {
+        "rule 4": set(v["4 only_ranked"]),
+        "rule 0": set(v["0 incumbency"]),
+    }
+    print(f"\n(c) residuals whose office course is one of {sorted(language)}")
+    hits = set()
+    for name, ids in residuals.items():
+        here = {t for t in ids if placed.get(t) in language}
+        hits |= here
+        print(f"    {name}: {len(here)} / {len(ids)}")
+    print(f"    either: {len(hits)}")
+
+    # M-011 says a course with no sign-ups drops. How many rankers did the unrun courses have?
+    rankers: dict[str, set[str]] = {}
+    for p in cycle.preferences:
+        rankers.setdefault(p.course_id, set()).add(p.teacher_id)
+    unrun = [c.course_id for c in cycle.courses if not c.ran]
+    print("\n(d) courses that did not run, by number of distinct rankers")
+    for n, k in sorted(Counter(len(rankers.get(c, ())) for c in unrun).items()):
+        print(f"    {n} ranker(s): {k}")
+
+
+if __name__ == "__main__":
+    main()

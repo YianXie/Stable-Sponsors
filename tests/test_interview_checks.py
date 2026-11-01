@@ -1,0 +1,78 @@
+from dataclasses import replace
+
+from stable_sponsors.interview_checks import (
+    fallback_origin,
+    repeater_status,
+    staffable,
+)
+
+
+def test_origin_all_unrun():
+    assert fallback_origin({"A", "B"}, ran={"C"}) == "all_unrun"
+
+
+def test_origin_some_unrun():
+    assert fallback_origin({"A", "B"}, ran={"A"}) == "some_unrun"
+
+
+def test_origin_none_unrun():
+    assert fallback_origin({"A"}, ran={"A"}) == "none_unrun"
+
+
+def test_two_male_rankers_cannot_staff_one_one_course():
+    assert not staffable([("T1", "male"), ("T2", "male")], 1, 1, 2)
+
+
+def test_male_and_female_rankers_staff_one_one_course():
+    assert staffable([("T1", "male"), ("T2", "female")], 1, 1, 2)
+
+
+def test_unknown_gender_is_wildcard():
+    assert staffable([("T1", "male"), ("T2", None)], 1, 1, 2)
+
+
+def test_one_ranker_ranking_twice_is_one_teacher():
+    assert not staffable([("T1", "male"), ("T1", "female")], 1, 1, 2)
+
+
+def test_teacher_with_conflicting_labels_fills_either_slot():
+    # T2 ranked this course under both labels: their gender is unknown, not "both"
+    assert staffable([("T1", "male"), ("T2", "male"), ("T2", "female")], 1, 1, 2)
+
+
+def test_too_few_teachers_is_not_staffable_even_if_slots_are_covered():
+    assert not staffable([("T1", "male"), ("T2", "female")], 1, 1, 3)
+
+
+def test_repeater_status_toy(toy_cycle):
+    s = repeater_status(toy_cycle)
+    assert s[("incumbent_ran", False)] == 2 and s[("incumbent_unrun", False)] == 0
+
+
+def test_repeater_status_counts_unrun_and_discontinued(toy_cycle):
+    teachers = tuple(
+        replace(t, incumbent_course_id="INTL-3")  # INTL-3 did not run
+        if t.teacher_id == "T1000"
+        else replace(t, incumbent_course_id=None)  # discontinued
+        if t.teacher_id == "T1004"
+        else t
+        for t in toy_cycle.teachers
+    )
+    s = repeater_status(replace(toy_cycle, teachers=teachers))
+    assert s[("incumbent_unrun", False)] == 1
+    assert s[("discontinued", False)] == 1
+    assert s[("incumbent_ran", False)] == 0
+
+
+def test_repeater_status_marks_submitters(toy_cycle):
+    # T1001 is not a repeater in the toy; make them one who also submitted
+    teachers = tuple(
+        replace(
+            t, is_repeater=True, prior_course_id="INTL-1", incumbent_course_id="INTL-1"
+        )
+        if t.teacher_id == "T1001"
+        else t
+        for t in toy_cycle.teachers
+    )
+    s = repeater_status(replace(toy_cycle, teachers=teachers))
+    assert s[("incumbent_ran", True)] == 1
