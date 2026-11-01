@@ -17,6 +17,13 @@ Re-running is safe: rows that already exist in the output file are kept
 exactly as they are (your edits win). Only IDs that are missing get a new
 draft row. IDs in the file that no longer exist in derived/ are reported,
 never deleted.
+
+To apply a drafting change to rows that already exist, name the columns:
+
+    uv run python -m stable_sponsors.params --cycle 2027 --refresh-cols gender male_slots female_slots
+
+Only those columns change, plus the `gender:` note in `source`. Refreshing `gender` overwrites a
+gender entered by hand, so don't refresh it once the office's data is in.
 """
 
 import argparse
@@ -59,10 +66,9 @@ def draft_course_params(
     """One row per course in `cycle`.
 
     Capacity: per-course-type default from `capacity`, e.g. {"intl": (2, 2)}.
-    Gendered slots: 1 if any preference row for the course carries that
-    (MALE)/(FEMALE) slot suffix, else 0. The suffix is input data (it was on
-    the form teachers filled in), but reading it as a hard requirement is
-    an assumption, so status stays `assumed`.
+    Gendered slots: 1 male + 1 female on every course (M-009, D-004). A form
+    suffix on one gender only is flagged with CHECK. That's expected where a
+    repeater holds the other slot, so it's information, not an error.
     Requirements: left blank. Nothing in the data says which courses need
     scuba etc.; that must come from the office or the procedure document.
     """
@@ -84,15 +90,16 @@ def draft_course_params(
             raise ValueError(f"no default capacity for course_type {ctype!r} ({cid})")
         lo, hi = capacity[ctype]
         genders = gendered.get(cid, set())
-        male, female = int("male" in genders), int("female" in genders)
+        male, female = 1, 1
 
-        notes = [f"capacity: default {lo}-{hi} for {ctype}"]
-        if genders:
-            notes.append(f"gender: slot suffix on form ({', '.join(sorted(genders))})")
-        elif cid not in ranked:
-            notes.append("gender: nobody ranked this course, no suffix evidence")
-        else:
-            notes.append("gender: no slot suffix seen")
+        notes = [
+            f"capacity: default {lo}-{hi} for {ctype}",
+            "gender: 1M/1F per M-009 (reported)",
+        ]
+        if len(genders) == 1:
+            notes.append(f"CHECK: form shows only {next(iter(genders))} slot")
+        if cid not in ranked:
+            notes.append("nobody ranked this course")
         if male + female > hi:
             notes.append(f"CHECK: {male + female} gendered slots > max {hi}")
         notes.append("requires: not yet known")
@@ -113,22 +120,39 @@ def draft_course_params(
     return pd.DataFrame(rows, columns=COURSE_COLS)
 
 
-def draft_teacher_params(teachers: pd.DataFrame, cycle: str) -> pd.DataFrame:
-    """One row per teacher in `cycle`, with qualifications and gender blank.
+def infer_gender_from_form(slot_genders_ranked: str | None) -> tuple[str | None, str]:
+    """(gender, note) from the (MALE)/(FEMALE) slot labels a teacher ranked.
 
-    Blank on purpose: qualifications come from hand-coding the free text, and
-    gender from the office. Guessing either here would put an invented fact
-    into the model with nothing marking it as invented.
+    Both labels on one form are a conflict: gender stays blank and is flagged, never resolved by
+    picking one. No label means unknown, not "no".
+    """
+    if slot_genders_ranked is None or pd.isna(slot_genders_ranked):
+        return None, "gender: not yet received"
+    labels = set(slot_genders_ranked.split("|"))
+    if len(labels) > 1:
+        return None, "CHECK: form has both slot labels; gender: not yet received"
+    return next(iter(labels)), "gender: form slot label"
+
+
+def draft_teacher_params(teachers: pd.DataFrame, cycle: str) -> pd.DataFrame:
+    """One row per teacher in `cycle`, with qualifications blank and gender from the form.
+
+    Qualifications come from hand-coding the free text. Gender comes from the form's slot label
+    when there is exactly one (status `inferred`), else stays blank until the office supplies it.
     """
     teachers = _for_cycle(teachers, cycle)
+    inferred = [infer_gender_from_form(v) for v in teachers["slot_genders_ranked"]]
     return pd.DataFrame(
         {
             "cycle": cycle,
             "teacher_id": teachers["teacher_id"].to_numpy(),
             "qualifications": "",
-            "gender": "",
-            "source": "qualifications: not yet coded from freetext; gender: not yet received",
-            "status": "assumed",
+            "gender": [g or "" for g, _ in inferred],
+            "source": [
+                f"qualifications: not yet coded from freetext; {note}"
+                for _, note in inferred
+            ],
+            "status": ["inferred" if g else "assumed" for g, _ in inferred],
         },
         columns=TEACHER_COLS,
     )
@@ -159,6 +183,58 @@ def merge_keep_existing(
     return pd.concat([existing, new], ignore_index=True), list(new[id_col]), orphans
 
 
+def refresh_columns(
+    existing: pd.DataFrame,
+    draft: pd.DataFrame,
+    id_col: str,
+    cycle: str,
+    cols: list[str],
+) -> pd.DataFrame:
+    """Overwrite `cols` with the draft's values for this cycle's rows; keep every other cell.
+
+    A column the file doesn't have yet is added, blank for rows the draft doesn't cover.
+    """
+    out = existing.copy()
+    rows = out["cycle"] == cycle
+    for col in cols:
+        if col not in out.columns:
+            out[col] = ""
+        values = draft.set_index(id_col)[col].astype(str)
+        known = rows & out[id_col].isin(values.index)
+        out.loc[known, col] = out.loc[known, id_col].map(values)
+    return out
+
+
+def _with_gender_note(source: str, draft_source: str) -> str:
+    """`source` with its `gender:` note (and any CHECK flag) replaced by the draft's."""
+
+    def is_gender(note: str) -> bool:
+        return note.startswith(("gender:", "CHECK:"))
+
+    kept = [n for n in source.split("; ") if not is_gender(n)]
+    return "; ".join(kept + [n for n in draft_source.split("; ") if is_gender(n)])
+
+
+def refresh_gender_source(
+    existing: pd.DataFrame, draft: pd.DataFrame, id_col: str, cycle: str
+) -> pd.DataFrame:
+    """Keep provenance true after a refresh: update the `gender:` note in `source`.
+
+    `status` moves only to `inferred`, the one status that describes the gender cell itself; a
+    course row's status also covers its capacity, so it stays.
+    """
+    out = existing.copy()
+    by_id = draft.set_index(id_col)
+    for i, row in out[out["cycle"] == cycle].iterrows():
+        if row[id_col] not in by_id.index:
+            continue
+        new = by_id.loc[row[id_col]]
+        out.loc[i, "source"] = _with_gender_note(str(row["source"]), new["source"])
+        if new["status"] == "inferred":
+            out.loc[i, "status"] = "inferred"
+    return out
+
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
@@ -176,6 +252,13 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--cycle", required=True)
     ap.add_argument("--intl", default="2,2", help="min,max sponsors for intl courses")
     ap.add_argument("--sg", default="2,2", help="min,max sponsors for sg courses")
+    ap.add_argument(
+        "--refresh-cols",
+        nargs="*",
+        default=[],
+        metavar="COL",
+        help="overwrite these columns on existing rows with the new draft; other cells are kept",
+    )
     args = ap.parse_args(argv)
 
     def pair(s: str) -> tuple[int, int]:
@@ -203,12 +286,22 @@ def main(argv: list[str] | None = None) -> None:
         ("course_params.csv", "course_id", course_draft),
         ("teacher_params.csv", "teacher_id", teacher_draft),
     ]
+    all_cols = set(course_draft.columns) | set(teacher_draft.columns)
+    if set(args.refresh_cols) - all_cols:
+        raise SystemExit(
+            f"--refresh-cols: no such column {sorted(set(args.refresh_cols) - all_cols)}"
+        )
     for name, id_col, draft in jobs:
         path = params_dir / name
         existing = read_csv(path) if path.exists() else None
         merged, added, orphans = merge_keep_existing(
             draft, existing, id_col, args.cycle
         )
+        cols = [c for c in args.refresh_cols if c in draft.columns]
+        if cols:
+            merged = refresh_columns(merged, draft, id_col, args.cycle, cols)
+            merged = refresh_gender_source(merged, draft, id_col, args.cycle)
+            print(f"{path}: refreshed {cols}")
         _write(merged, path)
         print(f"{path}: {len(added)} new rows, {len(draft) - len(added)} kept as-is")
         if orphans:
@@ -217,16 +310,31 @@ def main(argv: list[str] | None = None) -> None:
             )
 
     print("\ncourse summary (new drafts only matter; kept rows are yours):")
-    print(f"  courses with a male slot:   {int(course_draft['male_slots'].sum())}")
-    print(f"  courses with a female slot: {int(course_draft['female_slots'].sum())}")
     print(
         f"  courses nobody ranked:      {course_draft['source'].str.contains('nobody ranked').sum()}"
     )
+    one_sided = course_draft["source"].str.contains("form shows only")
+    print(f"  form shows one slot only:   {one_sided.sum()}")
     flagged = course_draft.loc[
-        course_draft["source"].str.contains("CHECK"), "course_id"
+        course_draft["source"].str.contains("gendered slots"), "course_id"
     ].tolist()
     if flagged:
         print(f"  CHECK (gendered slots exceed max): {flagged}")
+
+    # Counts only: never print a teacher's gender per ID.
+    submitters = set(_for_cycle(preferences, args.cycle)["teacher_id"])
+    blank = teacher_draft["gender"] == ""
+    is_sub = teacher_draft["teacher_id"].isin(submitters)
+    print("\nteacher gender from form labels:")
+    print(f"  inferred male:              {(teacher_draft['gender'] == 'male').sum()}")
+    print(
+        f"  inferred female:            {(teacher_draft['gender'] == 'female').sum()}"
+    )
+    print(
+        f"  conflicts (left blank):     {teacher_draft['source'].str.contains('both slot labels').sum()}"
+    )
+    print(f"  unknown, submitted a form:  {(blank & is_sub).sum()}")
+    print(f"  unknown, no form:           {(blank & ~is_sub).sum()}")
     print(
         "\nNext: edit the files, then ask the office about every row still `assumed`."
     )
