@@ -137,3 +137,24 @@ Prediction outcomes: P2 held (2224, 81 / 46 / 11). P3 failed: R4 runs 68, the sa
 - **A ranking may not be a sign-up.** Of 76 rankings on unrun courses, 45 are at rank 5 to 7 and 6 at rank 1. So the "M-011 doesn't fit" entry above is too firm; report Finding 3 has the weaker wording.
 - **The fall from 48 to 36 is mostly rule 5.** Dropping rule 10 alone gives 46; rule 5 takes it to 36. 68 against 65 courses restates the placed count (3 + 67 × 2), so it's not separate evidence of a limit on courses.
 - `course_set_check --list` no longer prints gender-staffable next to T### IDs.
+
+**2026-11-01, fallback placements**
+
+Gate G1 failed, so the plan skips Task 6. The author chose to build it anyway, after seeing that rules 0, 4, 5 and 10 together are infeasible, which G1 didn't test. Runs using rule 11 are therefore exploratory, and R4 stays the primary model.
+
+Rule 11 penalises each submitter's placement in a course they didn't rank (a repeater's incumbent course doesn't count), as a secondary term in `K · primary + secondary` with K = teachers + 1. So the model first maximises the preference score, then uses as few fallbacks as that score allows. Assumed: rule 11 doesn't encode the interview's narrower description (single sponsors of two under-filled courses), and non-submitters fill seats at no cost, so they're used before any submitter is moved.
+
+`review` now reports whether the office's unranked placements are in some optimal solution, and whether the model's fallbacks land on the same teacher and course.
+
+Runs, all with rule 4 excluded and rule 11 on unless noted: R5 (`rules-2027-v3.1.yaml`), R8 (`rules-2027-v3.1-round-order.yaml`, equal international rounds), R9 (R5 without rule 5), R10 (`rules-2027-v3.1-fixed-set.yaml`: the office's course set, rule 10 on, so it uses an outcome as an input).
+
+Predictions, written before these runs (by the assistant, on the same terms as P2–P8):
+
+- P9. R5 uses at least one fallback placement.
+- P10. R5's primary score is at least R4's 2406. Holds by construction: it only removes a constraint.
+- P11. R5 has more contested submitters than R4's 51.
+- P12. Most of the 12 office unranked placements are in some optimal solution of R5.
+- P13. Fewer than 3 of the 12 are placed the same way in R5's solution.
+- P14. R5's determined-and-match count is at least R4's 36.
+- P15. R10 is feasible and uses fewer than 12 fallback placements.
+- P16. R9 uses fewer fallback placements than R5, since gender is one reason to need them.

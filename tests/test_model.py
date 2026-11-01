@@ -10,6 +10,7 @@ from stable_sponsors.model import (
     check_feasibility,
     determinacy,
     diagnose,
+    in_some_optimum,
     load_hard_rules,
     load_rules,
     objective_expr,
@@ -244,3 +245,19 @@ def test_excluding_a_deferred_rule_is_reported_as_off(tmp_path, capsys):
     report = _run_report(tmp_path, "--exclude", "2")
     assert report["excluded"] == []
     assert "already off" in capsys.readouterr().out
+
+
+def test_in_some_optimum_finds_each_side_of_a_tie():
+    cycle = _cycle(
+        [("T1", "A", 1), ("T2", "D", 1), ("T3", "D", 1)],
+        [_course("A"), _course("D", 4, 4)],
+    )
+    pairs = [("T2", "A"), ("T3", "A"), ("T1", "D")]
+    out = in_some_optimum(cycle, _rules(), pairs, exclude=frozenset({4}))
+    assert out == {("T2", "A"): True, ("T3", "A"): True, ("T1", "D"): False}
+
+
+def test_in_some_optimum_respects_hard_rules():
+    # rule 4 on: an unranked course is out of reach in every solution
+    cycle = _short_course_cycle()
+    assert in_some_optimum(cycle, _rules(), [("T2", "A")]) == {("T2", "A"): False}

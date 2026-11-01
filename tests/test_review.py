@@ -12,6 +12,7 @@ from stable_sponsors.review import (
     load_office,
     pinned_repeaters,
     score,
+    unranked_overlap,
 )
 from tests.conftest import RULES_PATH, make_private_root
 
@@ -279,3 +280,23 @@ def test_unranked_with_running_choices_is_separate():
     )
     assert out["unranked: own choices ran"] == ["T1"]
     assert out["unranked: own choices did not run"] == []
+
+
+def test_unranked_overlap_compares_office_and_model_fallbacks():
+    scores = {
+        ("T1", "A"): 5,
+        ("T2", "A"): 5,
+        ("T3", "A"): 5,
+        ("T4", "A"): 5,
+        ("T5", "A"): 5,
+    }
+    office = {"T1": "B", "T2": "C", "T3": "A", "T4": "D", "T9": "E"}
+    model = {"T1": "B", "T2": "X", "T3": "Y", "T4": "A", "T5": None, "T9": "E"}
+    out = unranked_overlap(model, office, scores, {"T4": "D"})
+    assert out["office"] == [
+        "T1",
+        "T2",
+    ]  # T3 ranked A; T4 is on their incumbent; T9 didn't submit
+    assert out["model"] == ["T1", "T2", "T3"]
+    assert out["same_course"] == ["T1"]
+    assert out["both_elsewhere"] == ["T2"]

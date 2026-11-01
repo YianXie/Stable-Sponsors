@@ -32,6 +32,7 @@ from stable_sponsors.model import (
     DETERMINACY_KEY,
     OPTIMAL_KEY,
     RUN_SUFFIX,
+    in_some_optimum,
     load_cycle_from_config,
     load_rules,
 )
@@ -39,6 +40,7 @@ from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_
 
 Assignment = dict[str, str | None]  # teacher_id -> course_id, None = unplaced
 
+OPTIMUM_CHECK_SECONDS = 60.0
 INCUMBENCY_RULE = (
     0  # incumbency_preassignment: pins repeaters to their incumbent course
 )
@@ -271,6 +273,41 @@ def classify_mismatches(
     return out
 
 
+def unranked_overlap(
+    model: Assignment,
+    office: Assignment,
+    scores: dict[tuple[str, str], int],
+    incumbent: dict[str, str],
+) -> dict[str, list[str]]:
+    """Do the model's fallback placements land where the office's unranked placements did?
+
+    ``office`` and ``model``: submitters each placed in a course they didn't rank (a repeater's
+    incumbent course doesn't count). ``same_course``: in both, on the same course.
+    ``both_elsewhere``: in both, on different courses. Lists are sorted teacher IDs.
+    """
+    submitters = {tid for tid, _ in scores}
+
+    def unranked(placed: Assignment) -> set[str]:
+        return {
+            t
+            for t, c in placed.items()
+            if t in submitters
+            and c is not None
+            and (t, c) not in scores
+            and incumbent.get(t) != c
+        }
+
+    o, m = unranked(office), unranked(model)
+    both = o & m
+    same = {t for t in both if office[t] == model[t]}
+    return {
+        "office": sorted(o),
+        "model": sorted(m),
+        "same_course": sorted(same),
+        "both_elsewhere": sorted(both - same),
+    }
+
+
 def latest_run(runs: Path) -> Path:
     for p in sorted(runs.glob(f"*{RUN_SUFFIX}.json"), reverse=True):
         if DETERMINACY_KEY in json.loads(p.read_text()):
@@ -334,6 +371,22 @@ def main(argv: list[str] | None = None) -> None:
         {x.course_id for x in cycle.courses if x.ran},
     )
 
+    incumbent = {
+        t.teacher_id: t.incumbent_course_id
+        for t in cycle.teachers
+        if t.is_repeater and t.incumbent_course_id is not None
+    }
+    overlap = unranked_overlap(assignment, office, scores, incumbent)
+    reachable = in_some_optimum(
+        cycle,
+        load_rules(Path(run["rules_file"])),
+        [(t, office[t]) for t in overlap["office"]],
+        exclude=frozenset(run["excluded"]),
+        time_limit=OPTIMUM_CHECK_SECONDS,
+    )
+    s["unranked_overlap"] = overlap
+    s["office_unranked_in_some_optimum"] = sum(reachable.values())
+
     print(
         f"run: {run_path.name}  cycle {run['cycle']}  excluded rules: {run['excluded'] or 'none'}"
     )
@@ -389,11 +442,19 @@ def main(argv: list[str] | None = None) -> None:
     print(f"office-unplaced teachers, by model ({s['teachers'] - s['office_placed']}):")
     for k, v in s["office_unplaced_by_model"].items():
         print(f"  {k:<33}{v:>4}")
+    print("placements into unranked courses:")
+    print(f"  by the office:                   {len(overlap['office']):>4}")
+    print(f"    allowed in some optimal solution: {sum(reachable.values()):>2}")
+    print(f"  by the model:                    {len(overlap['model']):>4}")
+    print(f"    same teacher, same course:     {len(overlap['same_course']):>4}")
+    print(f"    same teacher, other course:    {len(overlap['both_elsewhere']):>4}")
     print(
         "\ncontested match/mismatch reflects one arbitrary optimal solution: not evidence."
     )
 
     if args.list:
+        for k in ("office", "model", "same_course"):
+            print(f"\nunranked, {k} ({len(overlap[k])}): {' '.join(overlap[k])}")
         for cell, ids in c.items():
             print(f"\n{cell} ({len(ids)}): {' '.join(ids)}")
         for k, ids in s["determined_mismatch_categories"].items():

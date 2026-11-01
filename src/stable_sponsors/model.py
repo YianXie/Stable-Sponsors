@@ -194,6 +194,35 @@ def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str,
     return out
 
 
+def in_some_optimum(
+    cycle: Cycle,
+    rules: list[dict],
+    pairs: list[tuple[str, str]],
+    exclude=frozenset(),
+    time_limit=10.0,
+) -> dict[tuple[str, str], bool]:
+    """Is each (teacher_id, course_id) placement in at least one optimal solution?
+
+    True = the rules allow it at no cost to the objective, so they can't count it as wrong.
+    """
+    base = solve_optimal(cycle, rules, exclude=exclude, time_limit=time_limit)
+    if base.status != "optimal":
+        raise RuntimeError(f"no optimum to compare with: base solve was {base.status}")
+    ctx = build_model(cycle, rules, exclude=exclude)
+    out = {}
+    for tid, cid in pairs:
+        model = ctx.model.clone()
+        model.add(model.get_bool_var_from_proto_index(ctx.x[(tid, cid)].index) == 1)
+        solver, code = _solve(model, time_limit)
+        if code == cp_model.INFEASIBLE:
+            out[(tid, cid)] = False
+        elif code == cp_model.OPTIMAL:
+            out[(tid, cid)] = round(solver.objective_value) == base.value
+        else:
+            raise RuntimeError(f"timed out checking {tid}")
+    return out
+
+
 def diagnose(cycle, rules) -> dict:
     """Which rules does the conflict depend on?"""
     ids = [r["id"] for r in rules]
