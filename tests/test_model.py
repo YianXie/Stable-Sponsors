@@ -1,13 +1,21 @@
 import json
 from dataclasses import replace
 
+from ortools.sat.python import cp_model
+
 from stable_sponsors import model
+from stable_sponsors.data import Course, Cycle, Preference, Teacher
 from stable_sponsors.model import (
     active_rules,
     check_feasibility,
+    determinacy,
     diagnose,
     load_hard_rules,
+    load_rules,
+    objective_expr,
+    solve_optimal,
 )
+from stable_sponsors.rules.context import build_ctx
 from tests.conftest import RULES_PATH, make_private_root
 
 # Hard rules only: feasibility is a property of the constraints, not the objective.
@@ -91,3 +99,148 @@ def test_cli_time_limit_reaches_determinacy(tmp_path, monkeypatch):
     monkeypatch.setattr(model, "determinacy", spy)
     _run_report(tmp_path, "--optimize", "--time-limit", "42")
     assert seen["time_limit"] == 42.0
+
+
+# ---- fallback placements (rule 11): small inline cycles ----
+
+
+def _teacher(tid: str) -> Teacher:
+    return Teacher(2027, tid, False, None, None, True, False, False, None)
+
+
+def _course(cid: str, lo: int = 2, hi: int = 2) -> Course:
+    return Course(2027, cid, "intl", True, True, None, (), lo, hi, 0, 0)
+
+
+def _cycle(prefs: list[tuple], courses: list[Course]) -> Cycle:
+    """Each pref is (teacher, course, rank), optionally followed by a round (default intl_r1)."""
+    tids = sorted({p[0] for p in prefs})
+    return Cycle(
+        tuple(_teacher(t) for t in tids),
+        tuple(courses),
+        tuple(
+            Preference(2027, p[0], p[3] if len(p) > 3 else "intl_r1", p[2], p[1], None)
+            for p in prefs
+        ),
+    )
+
+
+def _rules(*without: int) -> list[dict]:
+    return [r for r in load_rules(RULES_PATH) if r["id"] not in without]
+
+
+def _short_course_cycle() -> Cycle:
+    # T1 wants A; T2's only choice B has no other rankers, so T2 can only help by filling A.
+    # T2 ranks B second, so A is the higher-scoring course to run.
+    return _cycle([("T1", "A", 1), ("T2", "B", 2)], [_course("A"), _course("B")])
+
+
+def test_fallback_lets_short_course_run():
+    r = solve_optimal(_short_course_cycle(), _rules(), exclude=frozenset({4}))
+    assert r.assignment == {"T1": "A", "T2": "A"}
+
+
+def test_short_course_does_not_run_with_rule_4_on():
+    r = solve_optimal(_short_course_cycle(), _rules())
+    assert r.assignment == {"T1": None, "T2": None}
+
+
+def test_fallback_never_used_when_it_gains_nothing():
+    # T3 and T4 could staff C, which nobody ranked, at no cost to anyone's preference score.
+    cycle = _cycle(
+        [("T1", "A", 1), ("T2", "A", 1), ("T3", "D", 1), ("T4", "D", 1)],
+        [_course("A"), _course("C"), _course("D", 3, 3)],
+    )
+    r = solve_optimal(cycle, _rules(), exclude=frozenset({4}))
+    assert r.assignment == {"T1": "A", "T2": "A", "T3": None, "T4": None}
+
+
+def test_fallback_not_used_when_a_ranked_seat_is_available():
+    # T2 could fill A unranked, but T3 ranked A: the ranked sponsor takes the seat.
+    cycle = _cycle(
+        [("T1", "A", 1), ("T2", "D", 1), ("T3", "A", 7)],
+        [_course("A"), _course("D", 3, 3)],
+    )
+    r = solve_optimal(cycle, _rules(), exclude=frozenset({4}))
+    assert r.assignment == {"T1": "A", "T2": None, "T3": "A"}
+
+
+def _costly_fallback_cycle() -> Cycle:
+    # T1's rank 7 in the Singapore round scores 1 point, and needs two fallback placements to run.
+    # Only K makes 1 point of preference score worth 2 fallbacks. D can't run with 3 teachers.
+    return _cycle(
+        [("T1", "A", 7, "sg"), ("T2", "D", 1), ("T3", "D", 1)],
+        [_course("A", 3, 3), _course("D", 4, 4)],
+    )
+
+
+def test_secondary_never_outweighs_primary():
+    cycle = _costly_fallback_cycle()
+    on = solve_optimal(cycle, _rules(), exclude=frozenset({4}))
+    off = solve_optimal(cycle, _rules(11), exclude=frozenset({4}))
+    assert on.primary_value == off.value
+    assert on.assignment == {"T1": "A", "T2": "A", "T3": "A"}
+
+
+def test_value_is_the_plain_score_without_secondary_terms():
+    r = solve_optimal(_short_course_cycle(), _rules(11), exclude=frozenset({4}))
+    assert r.value == r.primary_value
+
+
+def test_objective_expr_is_k_times_primary_plus_secondary():
+    ctx = build_ctx(_costly_fallback_cycle())  # 3 teachers, so K = 4
+    ctx.objective.append(5 * ctx.x[("T1", "A")])
+    ctx.secondary.append(-ctx.x[("T2", "A")])
+    ctx.model.add(ctx.x[("T1", "A")] == 1)
+    ctx.model.add(ctx.x[("T2", "A")] == 1)
+    ctx.model.maximize(objective_expr(ctx))
+    solver = cp_model.CpSolver()
+    solver.solve(ctx.model)
+    assert solver.objective_value == 4 * 5 - 1
+
+
+def test_objective_expr_is_plain_without_secondary_terms():
+    ctx = build_ctx(_costly_fallback_cycle())
+    ctx.objective.append(5 * ctx.x[("T1", "A")])
+    ctx.model.add(ctx.x[("T1", "A")] == 1)
+    ctx.model.maximize(objective_expr(ctx))
+    solver = cp_model.CpSolver()
+    solver.solve(ctx.model)
+    assert solver.objective_value == 5
+
+
+def test_determinacy_with_secondary_runs():
+    det = determinacy(_short_course_cycle(), _rules(), exclude=frozenset({4}))
+    assert det == {"T1": True, "T2": True}
+
+
+def test_determinacy_with_secondary_sees_a_tie_between_fallbacks():
+    # T2 and T3 tie for the one fallback seat on A: neither placement is determined.
+    cycle = _cycle(
+        [("T1", "A", 1), ("T2", "D", 1), ("T3", "D", 1)],
+        [_course("A"), _course("D", 4, 4)],
+    )
+    det = determinacy(cycle, _rules(), exclude=frozenset({4}))
+    assert det["T1"] is True
+    assert det["T2"] is False
+    assert det["T3"] is False
+
+
+def test_exclude_applies_to_priority_rules(tmp_path):
+    make_private_root(tmp_path)
+    report = _run_report(tmp_path, "--optimize", "--exclude", "11")
+    assert 11 in report["excluded"]
+
+
+def test_excluding_a_priority_rule_changes_the_objective(tmp_path, toy_cycle):
+    make_private_root(tmp_path)
+    report = _run_report(tmp_path, "--optimize", "--exclude", "6")  # no round bonuses
+    with_bonuses = solve_optimal(toy_cycle, load_rules(RULES_PATH))
+    assert report["optimal_result"]["primary_value"] < with_bonuses.primary_value
+
+
+def test_excluding_a_deferred_rule_is_reported_as_off(tmp_path, capsys):
+    make_private_root(tmp_path)
+    report = _run_report(tmp_path, "--exclude", "2")
+    assert report["excluded"] == []
+    assert "already off" in capsys.readouterr().out

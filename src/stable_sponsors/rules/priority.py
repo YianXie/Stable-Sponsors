@@ -57,3 +57,29 @@ def round_precedence(ctx: Ctx, params: dict) -> None:
     for (tid, cid), b in best.items():
         if b:
             ctx.objective.append(b * ctx.x[(tid, cid)])
+
+
+@register(11)
+def unranked_fallback(ctx: Ctx, params: dict) -> None:
+    """Use as few placements into unranked courses as the preference score allows.
+
+    Only matters with rule 4 excluded. These are secondary terms: a fallback is used only when it
+    costs no preference score, such as filling a seat so that a co-sponsor's choice can run.
+    Non-submitters have no penalty, and a repeater's incumbent course isn't a fallback.
+
+    Args:
+        ctx (Ctx): The context
+        params (dict): Unused
+    """
+
+    ranked = {(p.teacher_id, p.course_id) for p in ctx.cycle.preferences}
+    submitters = {p.teacher_id for p in ctx.cycle.preferences}
+    for t in ctx.cycle.teachers:
+        if t.teacher_id not in submitters:
+            continue
+        for c in ctx.cycle.courses:
+            if (t.teacher_id, c.course_id) in ranked:
+                continue
+            if t.is_repeater and t.incumbent_course_id == c.course_id:
+                continue
+            ctx.secondary.append(-ctx.x[(t.teacher_id, c.course_id)])

@@ -109,8 +109,8 @@ rules:
     description: A submitter may take a course they did not rank, but only when that costs no preference score.
     params: {}
     source: "M-013; diff 20"
-    status: deferred
-    notes: "Not built: gate G1 failed. Report v3.0 §6.3 has evidence G1 did not test."
+    status: assumed
+    notes: "Secondary term: only breaks ties among solutions with the best preference score, and only matters with rule 4 excluded. Gate G1 failed; built on the author's decision after the infeasibility in report §6.3, so runs using it are exploratory."
 
   - id: 12
     name: language_at_least_one

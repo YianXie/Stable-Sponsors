@@ -44,7 +44,10 @@ class FeasibilityResult:
 @dataclass(frozen=True)
 class OptimalResult:
     status: str  # "optimal" only if proven
-    value: int | None  # best total score V
+    value: int | None  # best value of objective_expr, V
+    primary_value: (
+        int | None
+    )  # sum(objective), comparable across runs with or without rule 11
     wall_time: float
     assignment: dict[str, str | None] | None
 
@@ -79,6 +82,17 @@ def load_cycle_from_config(cfg: dict, cycle: int, use_lineage: bool = True) -> C
     )
 
 
+def objective_expr(ctx: Ctx) -> cp_model.LinearExprT:
+    """The objective, with secondary terms only able to break ties.
+
+    K exceeds any total of the secondary terms, since each teacher is in at most one course and each
+    term is -1. Without secondary terms it is the plain score, so such runs keep their old values.
+    """
+    if not ctx.secondary:
+        return sum(ctx.objective)
+    return (len(ctx.cycle.teachers) + 1) * sum(ctx.objective) + sum(ctx.secondary)
+
+
 def build_model(
     cycle: Cycle, rules: list[dict], exclude: frozenset[int] = frozenset()
 ) -> Ctx:
@@ -87,7 +101,7 @@ def build_model(
         if r["id"] not in exclude:
             ENCODERS[r["id"]](ctx, r["params"])
     if ctx.objective:
-        ctx.model.maximize(sum(ctx.objective))
+        ctx.model.maximize(objective_expr(ctx))
     return ctx
 
 
@@ -134,6 +148,7 @@ def solve_optimal(
         return OptimalResult(
             "optimal",
             round(solver.objective_value),
+            round(solver.value(sum(ctx.objective))),
             solver.wall_time,
             _assignment(solver, ctx, cycle),
         )
@@ -142,7 +157,7 @@ def solve_optimal(
     status = {cp_model.FEASIBLE: "not_proven", cp_model.INFEASIBLE: "infeasible"}.get(
         code, "unknown"
     )
-    return OptimalResult(status, None, solver.wall_time, None)
+    return OptimalResult(status, None, None, solver.wall_time, None)
 
 
 def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str, bool]:
@@ -243,18 +258,22 @@ def main(argv: list[str] | None = None) -> None:
     exclude = frozenset(args.exclude)
     if exclude - all_ids:
         raise SystemExit(f"--exclude {sorted(exclude - all_ids)}: no such rule id")
-    inactive = exclude - {r["id"] for r in hard_rules}
+    inactive = exclude - {r["id"] for r in active_rules(all_rules)}
     if inactive:
-        print(f"note: --exclude {sorted(inactive)} already off (deferred or not hard)")
+        print(
+            f"note: --exclude {sorted(inactive)} already off (deferred, contradicted or tie-break)"
+        )
         exclude -= inactive
-    names = {r["id"]: r["name"] for r in hard_rules}
+    names = {r["id"]: r["name"] for r in active_rules(all_rules)}
 
     print(
         f"cycle {args.cycle}: {len(cycle.teachers)} teachers, {len(cycle.courses)} courses"
     )
     print(
         "hard rules to check feasibility on: "
-        + ", ".join(f"{i} {names[i]}" for i in names if i not in exclude)
+        + ", ".join(
+            f"{r['id']} {r['name']}" for r in hard_rules if r["id"] not in exclude
+        )
     )
     if exclude:
         print("excluded: " + ", ".join(f"{i} {names[i]}" for i in sorted(exclude)))
@@ -312,7 +331,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.optimize:
         rules = active_rules(all_rules)
         opt = solve_optimal(cycle, rules, exclude=exclude, time_limit=args.time_limit)
-        print(f"OPTIMAL: {opt.status}  value={opt.value}  ({opt.wall_time:.2f}s)")
+        print(
+            f"OPTIMAL: {opt.status}  value={opt.value}  primary={opt.primary_value}  ({opt.wall_time:.2f}s)"
+        )
         if opt.status == "optimal":
             det = determinacy(cycle, rules, exclude=exclude, time_limit=args.time_limit)
 
