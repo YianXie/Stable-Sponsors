@@ -77,3 +77,17 @@ def test_cli_no_lineage_needs_no_lineage_file(tmp_path):
     report = _run_report(tmp_path, "--no-lineage")
     assert report["lineage"] is False
     assert report["feasibility_result"]["assignment"]["T1000"] == "INTL-1"
+
+
+def test_cli_time_limit_reaches_determinacy(tmp_path, monkeypatch):
+    make_private_root(tmp_path)
+    seen = {}
+    real = model.determinacy
+
+    def spy(*args, **kwargs):
+        seen.update(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(model, "determinacy", spy)
+    _run_report(tmp_path, "--optimize", "--time-limit", "42")
+    assert seen["time_limit"] == 42.0

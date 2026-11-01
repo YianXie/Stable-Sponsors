@@ -310,7 +310,7 @@ def main(argv: list[str] | None = None) -> None:
         opt = solve_optimal(cycle, rules, exclude=exclude, time_limit=args.time_limit)
         print(f"OPTIMAL: {opt.status}  value={opt.value}  ({opt.wall_time:.2f}s)")
         if opt.status == "optimal":
-            det = determinacy(cycle, rules, exclude=exclude)
+            det = determinacy(cycle, rules, exclude=exclude, time_limit=args.time_limit)
 
             submitters = {p.teacher_id for p in cycle.preferences}
             determined = [t for t, d in det.items() if d]
