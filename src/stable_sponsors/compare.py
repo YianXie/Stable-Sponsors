@@ -1,3 +1,4 @@
+import argparse
 from collections import Counter
 from pathlib import Path
 from typing import Literal
@@ -223,9 +224,16 @@ def score_observed(cycle, rules, observed, exclude=frozenset(), time_limit=30.0)
     return "infeasible", broken
 
 
-def main() -> None:
-    config = load_config(DEFAULT_CONFIG)
-    rules = load_rules(Path("config/rules-2027.yaml"))
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser(
+        description="Check the office's allocation against the hard rules."
+    )
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
+    ap.add_argument("--rules", default="config/rules-2027.yaml", type=Path)
+    args = ap.parse_args(argv)
+
+    config = load_config(args.config)
+    rules = load_rules(args.rules)
     derived = out_path(config, "derived")
     cycle = load_cycle_from_config(config, CYCLE)
     observed = load_observed_placements(derived / "placements.csv", cycle)

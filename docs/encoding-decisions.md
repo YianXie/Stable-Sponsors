@@ -101,3 +101,17 @@ Prediction, written before running `compare` with rule 5: the office's allocatio
 
 Rule 5 is `reported` and uses an at-most form, so partial data can't force a wrong placement: known males ≤ (max − female_slots)·y and known females ≤ (max − male_slots)·y. Unknowns are free. It only overlaps rule 9 where a course's maximum is small: with rule 9 off it still caps known sponsors.
 `compare` result: 0 rule-5 violations, as predicted. With 52 / 138 genders known this is a weak test: the label appears only on the courses the form showed as gendered.
+
+**2026-11-01, run matrix**
+
+G1 failed, so the plan's fallback runs don't exist. The matrix is now: R3′ regression (`rules-2027-v2.3.yaml`), R4 (`rules-2027.yaml`: course set free, rule 4 hard, rule 5 partial; the primary model), R6 (`rules-2027-r6-round-order.yaml`, `intl_r1 = intl_r2 = 10`, rule 4 hard), R7 (`--exclude 5`, rule 4 hard).
+
+Predictions, written before these runs:
+
+- P2. R3′ equals R3: 2224, 81 / 46 / 11.
+- P3. R4 runs fewer courses than R1's 68 and more than the office's 65.
+- P4. R4's optimum is at most R1's 2419. Rule 5 only removes options, though lineage also changed since R1, so this is weak.
+- P5. R4's determined-and-match count is below R3's 48: without rule 10 the model chooses among more courses and has less to match on.
+- P6. Rule-4 and rule-0 residuals don't change across runs, because `violations` doesn't depend on the objective.
+- P7. R6 has at least as many contested submitters as R4: equal bonuses create more ties.
+- P8. R7's optimum is at least R4's and it runs at least as many courses, since it only removes a constraint.
