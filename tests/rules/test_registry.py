@@ -16,3 +16,13 @@ def test_encoder_implemented(rule_id, ctx):
         ENCODERS[rule_id](ctx, ALL[rule_id]["params"])
     except NotImplementedError:
         pytest.xfail(f"{rule_id} not implemented yet")
+
+
+def test_statuses_are_known():
+    assert {r["status"] for r in RULES} <= {
+        "documented",
+        "reported",
+        "assumed",
+        "deferred",
+        "contradicted",
+    }

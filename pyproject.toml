@@ -23,4 +23,4 @@ testpaths = ["tests"]
 pythonpath = ["src", "tools"]
 
 [tool.ruff]
-exclude = [".git", ".venv", "build", "dist", "migrations", ".agents", ".claude"]
+exclude = [".git", ".venv", "build", "dist", "migrations", ".agents", ".claude", "docs/superpowers"]

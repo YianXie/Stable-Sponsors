@@ -49,13 +49,14 @@ rules:
     params: {}
     source: "diff 13"
     status: assumed
+    notes: "Repeater's incumbent course counts as ranked; amendment supported by M-012 (repeaters are asked first, before open sign-up)."
 
   - id: 5
     name: slot_gender
     class: hard
     description: A slot marked MALE or FEMALE is filled only by a teacher of that gender.
     params: {}
-    source: "diff 7: seen in form suffixes, not in procedure"
+    source: "M-009; D-004; diff 16"
     status: deferred
     notes: "Since no teacher gender data is available, this rule is deferred. If gender data is added, this rule will be implemented."
 
@@ -64,8 +65,9 @@ rules:
     class: priority
     params:
       bonus: { intl_r1: 20, intl_r2: 10, sg: 0 } # gaps > max rank weight (7)
+    source: "M-014; diff 21"
     status: assumed
-    notes: "Order assumed from the form sequence (02 → 03 → 04). Ask office whether SG is a fallback pool."
+    notes: "intl > sg reported (M-014); r1 > r2 still assumed."
 
   - id: 7
     name: tie_break
@@ -89,8 +91,8 @@ rules:
     class: hard
     description: Each course is assigned at least its minimum and at most its maximum number of teachers.
     params: {}
-    source: "diff 12"
-    status: assumed
+    source: "M-008; diff 15"
+    status: reported
 
   - id: 10
     name: courses_run_as_observed
@@ -98,5 +100,23 @@ rules:
     description: The set of running courses is fixed before sponsors are allocated.
     params: {}
     source: "inferred from run 2026-10-18 (8 submitters unplaced; course sets differ)"
-    status: assumed
-    notes: "Uses an outcome (which courses ran) as an input. Legitimate only if the office confirms the course list was set before sponsor allocation."
+    status: contradicted
+    notes: "M-011. Kept for replay via rules-2027-v2.3.yaml. M-011 contradicts a fixed set of courses, not necessarily a fixed number of them (see docs/interview-2026-10-28.md, Q5)."
+
+  - id: 11
+    name: unranked_fallback
+    class: priority
+    description: A submitter may take a course they did not rank, but only when that costs no preference score.
+    params: {}
+    source: "M-013; diff 20"
+    status: deferred
+    notes: "Encoder pending the G1 gate."
+
+  - id: 12
+    name: language_at_least_one
+    class: hard
+    description: A language immersion course has at least one sponsor with that language.
+    params: {}
+    source: "M-010; diff 17"
+    status: deferred
+    notes: "Needs teacher language data from the office; coding it from free text would treat unknown as no. Encoded as hard, though the office described it as a preference."

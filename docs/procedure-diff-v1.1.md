@@ -41,3 +41,12 @@ Sources:
 |   12   |     Q2      |      -      |      E       |
 |   13   |     Q3      |      -      |      E       |
 |   14   |     Q4      |      -      |      E       |
+|   15   |    M-008    |     -     |      C       |
+|   16   |    M-009    |   D-004   |      A       |
+|   17   |    M-010    |   D-005   |      A       |
+|   18   |    M-011    |     -     |      E       |
+|   19   |    M-012    |     -     |      E       |
+|   20   |    M-013    |     -     |      E       |
+|   21   |    M-014    |   D-001   |      E       |
+
+Row 16: the procedure's D-004 already requires one sponsor of each gender, so M-009 is category A; diff 7 (M-007, category C) predates that reading. Row 21: D-001 gives the order (Singapore after international); the fallback priority itself is in neither document.

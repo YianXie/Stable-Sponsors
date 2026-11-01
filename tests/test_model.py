@@ -2,11 +2,21 @@ import json
 from dataclasses import replace
 
 from stable_sponsors import model
-from stable_sponsors.model import check_feasibility, diagnose, load_hard_rules
+from stable_sponsors.model import (
+    active_rules,
+    check_feasibility,
+    diagnose,
+    load_hard_rules,
+)
 from tests.conftest import RULES_PATH, make_private_root
 
 # Hard rules only: feasibility is a property of the constraints, not the objective.
 RULES = load_hard_rules(RULES_PATH)
+
+
+def test_contradicted_rules_inactive():
+    rules = [{"id": 10, "class": "hard", "status": "contradicted", "params": {}}]
+    assert active_rules(rules) == []
 
 
 def test_toy_is_feasible(toy_cycle):

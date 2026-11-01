@@ -21,6 +21,7 @@ STATUS = {
     cp_model.UNKNOWN: "unknown",  # hit the time limit. NOT the same as infeasible
 }
 SOLVED = (cp_model.OPTIMAL, cp_model.FEASIBLE)  # the solver found an assignment
+INACTIVE_STATUSES = ("deferred", "contradicted")
 
 # The run report contract: main() writes runs/<when>_model_run.json, review.py reads it.
 RUN_SUFFIX = "_model_run"
@@ -49,7 +50,11 @@ class OptimalResult:
 
 
 def active_rules(rules: list[dict], classes=("hard", "priority")) -> list[dict]:
-    return [r for r in rules if r["class"] in classes and r["status"] != "deferred"]
+    return [
+        r
+        for r in rules
+        if r["class"] in classes and r["status"] not in INACTIVE_STATUSES
+    ]
 
 
 def load_rules(path: Path, classes=("hard", "priority")) -> list[dict]:
