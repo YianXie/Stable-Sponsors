@@ -115,3 +115,16 @@ Predictions, written before these runs:
 - P6. Rule-4 and rule-0 residuals don't change across runs, because `violations` doesn't depend on the objective.
 - P7. R6 has at least as many contested submitters as R4: equal bonuses create more ties.
 - P8. R7's optimum is at least R4's and it runs at least as many courses, since it only removes a constraint.
+
+`determinacy` now re-optimises with each teacher's placement forbidden, and calls them determined if the optimum falls below V. The old form (pin the objective at V, then prove infeasibility) timed out on R4 even at 300 s per teacher. The new form checks all 138 in about 65 s. The two agree exactly on R3′, R6 and R7, the runs the old form could finish. `model --time-limit` also now reaches `determinacy`; it was stuck at 10 s.
+
+Runs, all `--optimize`, cycle 2027, lineage on, logged in report §5.4:
+
+| Run | Rules file | Excluded | Report file |
+| --- | --- | --- | --- |
+| R3′ | `rules-2027-v2.3.yaml` | – | `2026-11-01T181831_model_run.json` |
+| R4 | `rules-2027.yaml` | – | `2026-11-01T181836_model_run.json` |
+| R6 | `rules-2027-r6-round-order.yaml` | – | `2026-11-01T181940_model_run.json` |
+| R7 | `rules-2027.yaml` | 5 | `2026-11-01T182012_model_run.json` |
+
+Prediction outcomes: P2 held (2224, 81 / 46 / 11). P3 failed: R4 runs 68, the same as R1, not fewer. P4 held (2406). P5 held (36). P6 held. P7 failed: R6 has 16 contested submitters against R4's 51, so equal bonuses removed ties rather than adding them. P8 held (2437, 68 courses).

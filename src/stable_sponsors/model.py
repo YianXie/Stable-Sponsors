@@ -151,10 +151,11 @@ def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str,
         raise RuntimeError(f"can't analyse ties: base solve was {base.status}")
     assert base.assignment is not None  # always set when status is "optimal"
 
-    # One model pinned at the optimum; each teacher's check runs on a copy of it.
+    # A teacher is determined if forbidding their placement lowers the optimum. Re-optimising is
+    # far faster than proving "no solution reaches V" with the objective pinned as a constraint.
     ctx = build_model(cycle, rules, exclude=exclude)
-    ctx.model.add(sum(ctx.objective) == base.value)
-    if _solve(ctx.model, time_limit)[1] not in SOLVED:
+    solver, code = _solve(ctx.model, time_limit)
+    if code != cp_model.OPTIMAL or round(solver.objective_value) != base.value:
         raise RuntimeError(
             "check model can't reach the optimum: base and check models differ"
         )
@@ -168,10 +169,13 @@ def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str,
             model.add(sum(x.values()) >= 1)
         else:
             model.add(x[cid] == 0)
-        _, code = _solve(model, time_limit)
-        if code != cp_model.INFEASIBLE and code not in SOLVED:
+        solver, code = _solve(model, time_limit)
+        if code == cp_model.INFEASIBLE:
+            out[tid] = True
+        elif code == cp_model.OPTIMAL:
+            out[tid] = round(solver.objective_value) < base.value  # True = determined
+        else:
             raise RuntimeError(f"timed out checking {tid}")
-        out[tid] = code == cp_model.INFEASIBLE  # True = determined
     return out
 
 
