@@ -135,8 +135,8 @@ def test_lineage_off_unknown_code_means_no_incumbency(tmp_path):
 
 
 def test_observed_placements_keep_assigned_rows_of_this_cycle(tmp_path, toy_cycle):
-    """derived/placements.csv also holds empty sponsor slots (no teacher) and
-    other cycles' rows. Those are not placements in this cycle."""
+    """placements.csv also holds empty sponsor slots (no teacher), and a file may
+    hold other cycles' rows. Those are not placements in this cycle."""
     p = tmp_path / "placements.csv"
     p.write_text(
         (TOY_DIR / "placements.csv").read_text().rstrip("\n")

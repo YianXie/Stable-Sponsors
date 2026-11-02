@@ -1,7 +1,7 @@
 """Count model allocations that are determined and match the office's allocation.
 
 Reads one run report written by ``model --optimize`` (``private_root/runs/*_model_run.json``)
-and compares it with the office's observed placements in ``derived/placements.csv``.
+and compares it with the office's observed placements in ``derived/<cycle>/placements.csv``.
 
 For every teacher in the run, two questions:
 
@@ -36,7 +36,12 @@ from stable_sponsors.model import (
     load_rules,
     placement_costs,
 )
-from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
+from stable_sponsors.pseudonymize.idmap import (
+    DEFAULT_CONFIG,
+    for_cycle,
+    load_config,
+    out_path,
+)
 
 Assignment = dict[str, str | None]  # teacher_id -> course_id, None = unplaced
 
@@ -109,7 +114,7 @@ def score(
     """Cross-tabulate determined/contested x match/mismatch over the teachers in the run.
 
     ``office`` may omit unplaced teachers. Office teachers missing from the run are counted
-    separately (they mean the run and derived/ are out of sync) and are not scored.
+    separately (they mean the run and derived/<cycle>/ are out of sync) and are not scored.
     ``contested_submitters`` splits the model's placements of teachers the office left unplaced.
     """
     if set(model) != set(determined):
@@ -327,8 +332,7 @@ def main(argv: list[str] | None = None) -> None:
     args = ap.parse_args(argv)
 
     config = load_config(args.config)
-    runs, derived = out_path(config, "runs"), out_path(config, "derived")
-    run_path = args.run or latest_run(runs)
+    run_path = args.run or latest_run(out_path(config, "runs"))
     run = json.loads(run_path.read_text())
     if (
         DETERMINACY_KEY not in run
@@ -338,7 +342,7 @@ def main(argv: list[str] | None = None) -> None:
             f"{run_path.name}: no proven optimum + determinacy; use an --optimize run"
         )
 
-    placements = derived / "placements.csv"
+    placements = out_path(for_cycle(config, run["cycle"]), "derived") / "placements.csv"
     ran_at = datetime.fromisoformat(run["when"])
     if datetime.fromtimestamp(placements.stat().st_mtime) > ran_at:
         print(

@@ -2,7 +2,7 @@
 
     uv run python -m stable_sponsors.params --cycle 2027
 
-Reads only INPUT tables from private_root/derived/ (courses, teachers,
+Reads only INPUT tables from private_root/derived/<cycle>/ (courses, teachers,
 preferences). It never opens placements.csv: a parameter copied from what
 actually happened would make reproduction succeed for a meaningless reason.
 
@@ -15,7 +15,7 @@ confirms things, changing status to confirmed or documented.
 
 Re-running is safe: rows that already exist in the output file are kept
 exactly as they are (your edits win). Only IDs that are missing get a new
-draft row. IDs in the file that no longer exist in derived/ are reported,
+draft row. IDs in the file that no longer exist in derived/<cycle>/ are reported,
 never deleted.
 
 To apply a drafting change to rows that already exist, name the columns:
@@ -32,7 +32,12 @@ from pathlib import Path
 import pandas as pd
 
 from stable_sponsors.data import read_csv
-from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
+from stable_sponsors.pseudonymize.idmap import (
+    DEFAULT_CONFIG,
+    for_cycle,
+    load_config,
+    out_path,
+)
 
 COURSE_COLS = [
     "cycle",
@@ -270,7 +275,7 @@ def main(argv: list[str] | None = None) -> None:
     capacity = {"intl": pair(args.intl), "sg": pair(args.sg)}
 
     cfg = load_config(args.config)
-    derived = out_path(cfg, "derived")
+    derived = out_path(for_cycle(cfg, args.cycle), "derived")
     params_dir = out_path(cfg, "params")
     params_dir.mkdir(parents=True, exist_ok=True)
 
@@ -306,7 +311,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"{path}: {len(added)} new rows, {len(draft) - len(added)} kept as-is")
         if orphans:
             print(
-                f"  WARNING: {len(orphans)} {id_col}s in file but not in derived/: {orphans}"
+                f"  WARNING: {len(orphans)} {id_col}s in file but not in {derived}: {orphans}"
             )
 
     print("\ncourse summary (new drafts only matter; kept rows are yours):")

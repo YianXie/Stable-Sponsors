@@ -20,6 +20,8 @@ import yaml
 # src/stable_sponsors/pseudonymize/idmap.py -> repo
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG = "config/pseudonymize.yaml"  # --config default for every entry point
+# folders under private_root with one subfolder per cycle: key/2027/, derived/2027/ ...
+CYCLE_AREAS = ("key", "derived", "freetext")
 
 TITLES = {"mr", "mrs", "ms", "miss", "dr", "prof", "mx", "sir", "madam", "mme"}
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "phd", "edd", "md"}
@@ -170,8 +172,40 @@ def load_config(path) -> dict:
     return cfg
 
 
-def out_path(cfg, rel: str) -> Path:
+def for_cycle(cfg: dict, cycle) -> dict:
+    """cfg narrowed to one cycle, so out_path() resolves into that cycle's folders.
+
+    `cycles` keeps only this cycle's spec (empty if the config has none, e.g. for
+    analysis of a cycle whose raw files are gone); `_all_cycles` keeps every spec.
+    """
+    key = str(cycle)
+    specs = cfg.get("_all_cycles", cfg["cycles"])
+    return {
+        **cfg,
+        "_cycle": key,
+        "_all_cycles": specs,
+        "cycles": {key: specs[key]} if key in specs else {},
+    }
+
+
+def root_path(cfg, rel: str) -> Path:
+    """rel under private_root as written, never redirected to a cycle's folder."""
     return _guard(cfg["_private_root"] / rel, "output path")
+
+
+def out_path(cfg, rel: str) -> Path:
+    """rel under private_root, with key/, derived/ and freetext/ in the cycle's folder.
+
+    "derived/teachers.csv" on a cfg from for_cycle(cfg, 2027) is
+    private_root/derived/2027/teachers.csv. Those three areas only exist per
+    cycle, so asking for one without a cycle is a programming error.
+    """
+    head, _, tail = rel.partition("/")
+    if head in CYCLE_AREAS:
+        if "_cycle" not in cfg:
+            raise ValueError(f"{head}/ is per cycle; use for_cycle(cfg, cycle) first")
+        rel = "/".join(p for p in (head, cfg["_cycle"], tail) if p)
+    return root_path(cfg, rel)
 
 
 def raw_path(cfg, rel: str) -> Path:

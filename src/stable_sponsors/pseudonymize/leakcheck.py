@@ -1,8 +1,8 @@
-"""Find personal identifiers that survived into derived/.
+"""Find personal identifiers that survived into a cycle's derived/<cycle>/.
 
-Used by tests/pseudonymize/test_leakage.py and by the synthetic end-to-end
-test. Returns findings instead of printing them, because the findings
-themselves are names.
+Takes a config scoped with for_cycle(). Used by tests/pseudonymize/test_leakage.py
+and by the synthetic end-to-end test. Returns findings instead of printing them,
+because the findings themselves are names.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def text_words(blob: str) -> set[str]:
 
 
 def identity_tokens_and_domains(cfg) -> tuple[set[str], set[str]]:
-    """Name/email-local tokens and email domains from key/identity.csv, in one read."""
+    """Name/email-local tokens and email domains from key/<cycle>/identity.csv, in one read."""
     cw = pd.read_csv(out_path(cfg, "key/identity.csv"), dtype=str).fillna("")
     toks, domains = set(), set()
     for kind, ident in zip(cw["kind"], cw["identifier"]):

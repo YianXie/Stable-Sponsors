@@ -8,7 +8,12 @@ import yaml
 from ortools.sat.python import cp_model
 
 from stable_sponsors.data import Cycle, load_cycle
-from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
+from stable_sponsors.pseudonymize.idmap import (
+    DEFAULT_CONFIG,
+    for_cycle,
+    load_config,
+    out_path,
+)
 from stable_sponsors.rules import hard, priority, tiebreak  # noqa: F401  (registers encoders)
 from stable_sponsors.rules.context import Ctx, build_ctx
 from stable_sponsors.rules.registry import ENCODERS
@@ -69,15 +74,17 @@ def load_hard_rules(path: Path) -> list[dict]:
 
 
 def load_cycle_from_config(cfg: dict, cycle: int, use_lineage: bool = True) -> Cycle:
-    """One cycle of the real data under private_root: derived/, params/ and key/course_lineage.csv.
+    """One cycle of the real data under private_root: derived/<cycle>/, params/ and
+    key/<cycle>/course_lineage.csv.
 
     use_lineage=False disables the lineage fix (see data.load_cycle).
     """
+    ccfg = for_cycle(cfg, cycle)
     return load_cycle(
-        out_path(cfg, "derived"),
+        out_path(ccfg, "derived"),
         params_dir=out_path(cfg, "params"),
         cycle=cycle,
-        lineage_path=out_path(cfg, "key") / "course_lineage.csv",
+        lineage_path=out_path(ccfg, "key") / "course_lineage.csv",
         use_lineage=use_lineage,
     )
 

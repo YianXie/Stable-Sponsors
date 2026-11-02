@@ -1,5 +1,8 @@
 """Targeted regressions, one per defect found in review. Tiny hand-built datasets."""
 
+import json
+import shutil
+
 import pandas as pd
 import pytest
 import yaml
@@ -7,13 +10,16 @@ from make_synthetic import write_xlsx as xlsx
 
 import stable_sponsors.pseudonymize.apply_pseudonymization as s2
 import stable_sponsors.pseudonymize.build_crosswalk as s1
+from stable_sponsors.pseudonymize import pipeline
 from stable_sponsors.pseudonymize.idmap import (
     CourseIndex,
+    for_cycle,
     is_placeholder_sponsor,
     load_config,
     norm_name,
     safe_headers,
 )
+from stable_sponsors.pseudonymize.layout import prepare_cycle
 from stable_sponsors.pseudonymize.leakcheck import text_words
 from stable_sponsors.pseudonymize.sources import load_cycle
 
@@ -125,7 +131,7 @@ def mini(
             {"private_root": str(tmp), "raw_dir": "raw", "cycles": {"C": spec}}
         )
     )
-    return load_config(cp)
+    return prepare_cycle(load_config(cp), "C", quiet=True)
 
 
 def _csv(path):
@@ -236,7 +242,7 @@ def test_unknown_repeat_status_stays_unknown(tmp_path):
     cfg = mini(tmp_path, repeaters=False)  # Carla Cruz is placed with no form
     s1.run(cfg, quiet=True)
     confirm_and_build(cfg)
-    t = _csv(tmp_path / "derived/teachers.csv")
+    t = _csv(tmp_path / "derived/C/teachers.csv")
     _, m = ids(cfg, s1.ID_FINAL)
     carla = t[t.teacher_id == m["Carla Cruz"]].iloc[0]
     assert carla["placed_without_submission"] == "" and carla["is_repeater"] == ""
@@ -261,9 +267,9 @@ def test_two_addresses_for_one_teacher_give_one_list(tmp_path):
     df.loc[row, "teacher_id"] = main
     df.to_csv(s1.out_path(cfg, s1.ID_DRAFT), index=False)
     confirm_and_build(cfg)
-    p = pd.read_csv(tmp_path / "derived/preferences.csv", dtype=str)
+    p = pd.read_csv(tmp_path / "derived/C/preferences.csv", dtype=str)
     assert len(p[p.teacher_id == main]) == 2
-    c = pd.read_csv(tmp_path / "derived/checks.csv", dtype=str)
+    c = pd.read_csv(tmp_path / "derived/C/checks.csv", dtype=str)
     assert (c["check"] == "two_addresses_same_teacher_same_form").sum() == 1
 
 
@@ -500,7 +506,7 @@ def test_unconfirmed_wrong_link_is_corrected_by_new_evidence(tmp_path):
         placements=pl,
         r1_names=True,
     )
-    cfg = load_config(tmp_path / "cfg.yaml")
+    cfg = for_cycle(load_config(tmp_path / "cfg.yaml"), "C")
     s1.run(cfg, quiet=True)
     df, m = ids(cfg)
     assert m[f"dkim@{D}"] == m["Daniel Kim"] != m["Dana Kim"]
@@ -522,7 +528,7 @@ def test_latest_submission_wins_across_two_addresses(tmp_path):
     _, m = ids(cfg)
     _set(cfg, f"alan.abbott@{D}", teacher_id=m[f"aabbott@{D}"], notes="same person")
     confirm_and_build(cfg)
-    pr = pd.read_csv(tmp_path / "derived/preferences.csv", dtype=str)
+    pr = pd.read_csv(tmp_path / "derived/C/preferences.csv", dtype=str)
     got = (
         pr[pr.teacher_id == m[f"aabbott@{D}"]].sort_values("rank")["course_id"].tolist()
     )
@@ -673,9 +679,9 @@ def test_listed_singapore_course_missing_from_placements(tmp_path):
     assert cat.loc["SING-2", ["course_type", "ran"]].tolist() == ["sg", "unknown"]
     assert report["courses"]["C"]["missing"] == ["SING-2"]
     confirm_and_build(cfg)
-    c = _csv(tmp_path / "derived/courses.csv").set_index("course_id")
+    c = _csv(tmp_path / "derived/C/courses.csv").set_index("course_id")
     assert c.loc["SING-2", "ran"] == "" and c.loc["SING-1", "ran"] == "True"
-    ch = pd.read_csv(tmp_path / "derived/checks.csv", dtype=str)
+    ch = pd.read_csv(tmp_path / "derived/C/checks.csv", dtype=str)
     assert (
         (ch["check"] == "course_missing_from_placements")
         & (ch["course_id"] == "SING-2")
@@ -695,7 +701,7 @@ def test_office_says_it_did_not_run(tmp_path):
         cat.loc["SING-2", "ran"] == "n" and "MISSING" not in cat.loc["SING-2", "flags"]
     )
     confirm_and_build(cfg)
-    c = _csv(tmp_path / "derived/courses.csv").set_index("course_id")
+    c = _csv(tmp_path / "derived/C/courses.csv").set_index("course_id")
     assert c.loc["SING-2", "ran"] == "False"
 
 
@@ -739,7 +745,7 @@ def test_listed_course_nobody_ranked_still_appears_in_courses(tmp_path):
     )
     s1.run(cfg, quiet=True)
     confirm_and_build(cfg)
-    c = _csv(tmp_path / "derived/courses.csv").set_index("course_id")
+    c = _csv(tmp_path / "derived/C/courses.csv").set_index("course_id")
     assert c.loc["SING-2", ["course_type", "ran"]].tolist() == ["sg", "False"]
 
 
@@ -782,23 +788,24 @@ def test_singapore_list_decides_type_and_flags_strays(tmp_path):
     assert "SG_BUT_NOT_IN_SG_LIST" in cat.loc["SING-5", "flags"]
 
 
-def test_key_files_from_an_older_version_are_set_aside(tmp_path):
+def test_key_files_from_an_older_version_are_ignored_but_kept(tmp_path):
     cfg = mini(tmp_path)
-    key = tmp_path / "key"
-    key.mkdir()
-    pd.DataFrame(
+    key = tmp_path / "key" / "C"
+    old_alias = pd.DataFrame(
         {
             "preference_string": ["Bali Service"],
             "proposed_course_code": [""],
             "confirmed": ["y"],
         }
-    ).to_csv(key / "course_alias.csv", index=False)
-    pd.DataFrame({"teacher_id": ["T001"], "email": ["x@y.z"]}).to_csv(
-        key / "identity_draft.csv", index=False
     )
+    old_alias.to_csv(key / "course_alias.csv", index=False)
+    old_id = pd.DataFrame({"teacher_id": ["T001"], "email": ["x@y.z"]})
+    old_id.to_csv(key / "identity_draft.csv", index=False)
     s1.run(cfg, quiet=True)
-    assert not (key / "course_alias.csv").exists()
-    assert len(list((key / "backup" / "legacy").glob("*.csv"))) == 2
+    # never moved or deleted: the final is untouched, the draft copied before overwrite
+    assert _csv(key / "course_alias.csv").equals(old_alias.astype(str))
+    [kept] = (key / "backup").glob("identity_draft.*.csv")
+    assert _csv(kept).equals(old_id)
     al = pd.read_csv(key / "course_alias_draft.csv", dtype=str)
     assert "cycle" in al.columns
 
@@ -819,7 +826,7 @@ def test_gender_slot_tags_map_to_one_course_and_are_kept(tmp_path):
     assert len(intl) == 2 and set(intl["method"]) == {"exact_name"}
     confirm_and_build(cfg)
     _, m = ids(cfg, s1.ID_FINAL)
-    pr = _csv(tmp_path / "derived/preferences.csv")
+    pr = _csv(tmp_path / "derived/C/preferences.csv")
     alan = pr[pr.teacher_id == m[f"aabbott@{D}"]].sort_values("rank")
     assert alan[["course_id", "slot_gender"]].values.tolist() == [
         ["IDN-SVC", "male"],
@@ -827,10 +834,10 @@ def test_gender_slot_tags_map_to_one_course_and_are_kept(tmp_path):
     ]
     brian = pr[pr.teacher_id == m[f"bbaker@{D}"]].sort_values("rank")
     assert brian["slot_gender"].tolist() == ["female", ""]
-    te = _csv(tmp_path / "derived/teachers.csv").set_index("teacher_id")
+    te = _csv(tmp_path / "derived/C/teachers.csv").set_index("teacher_id")
     assert te.loc[m[f"aabbott@{D}"], "slot_genders_ranked"] == "male"
     assert te.loc[m[f"ccruz@{D}"], "slot_genders_ranked"] == "female|male"
-    ch = pd.read_csv(tmp_path / "derived/checks.csv", dtype=str)
+    ch = pd.read_csv(tmp_path / "derived/C/checks.csv", dtype=str)
     assert (ch["check"] == "ranked_both_male_and_female_slots").sum() == 1
 
 
@@ -840,3 +847,194 @@ def test_leak_scan_ignores_hex_digests_but_not_names():
     assert "facade" in w  # all-letter words are never treated as hex
     w = text_words('"sha": "93ce0f1ab2d4", code NR-3ce91a')
     assert "ce" not in w and "f" not in w and "ab" not in w
+
+
+# ---------------------------------------------------------------- per-cycle folders
+
+
+def test_out_path_puts_key_derived_and_freetext_in_the_cycle_folder(tmp_path):
+    cfg = mini(tmp_path)
+    assert (
+        s1.out_path(cfg, "derived/teachers.csv") == tmp_path / "derived/C/teachers.csv"
+    )
+    assert s1.out_path(cfg, "key") == tmp_path / "key/C"
+    assert s1.out_path(cfg, "params") == tmp_path / "params"  # not per cycle
+    assert s1.root_path(cfg, s1.ISSUED) == tmp_path / "key/issued_ids.txt"
+    with pytest.raises(ValueError):
+        s1.out_path(load_config(tmp_path / "cfg.yaml"), "derived")
+
+
+def test_missing_settings_are_refused_by_name(tmp_path):
+    cfg = load_config(mini(tmp_path) and tmp_path / "cfg.yaml")
+    spec = cfg["cycles"]["C"]
+    del spec["placements"]["sponsor_cols"]
+    with pytest.raises(SystemExit, match="C placements: missing sponsor_cols"):
+        load_cycle(cfg, "C")
+    spec.pop("placements")
+    with pytest.raises(SystemExit, match="placements is required"):
+        load_cycle(cfg, "C")
+    cfg["cycles"]["C"] = None
+    with pytest.raises(SystemExit, match="no settings"):
+        load_cycle(cfg, "C")
+
+
+def _flat_layout(src_cfg, root):
+    """Write the old single-folder layout under root from a built cycle C, plus rows
+    for another cycle Z that must not be copied into C."""
+    (root / "key").mkdir(parents=True)
+    (root / "freetext").mkdir()
+    for name in ("identity.csv", "identity_draft.csv"):
+        shutil.copy2(s1.out_path(src_cfg, f"key/{name}"), root / "key" / name)
+    for name in ("course_alias", "course_alias_draft", "course_catalogue"):
+        df = _csv(s1.out_path(src_cfg, f"key/{name}.csv"))
+        other = df.iloc[:1].assign(cycle="Z")
+        pd.concat([df, other]).to_csv(root / "key" / f"{name}.csv", index=False)
+    shutil.copy2(
+        s1.out_path(src_cfg, "key/course_catalogue_draft.csv"),
+        root / "key/course_catalogue_draft.csv",
+    )
+    (root / "key/draft_inputs.json").write_text(
+        json.dumps(
+            {"Z": {}, **json.loads(s1.out_path(src_cfg, s1.DRAFT_MANIFEST).read_text())}
+        )
+    )
+    pd.DataFrame(
+        {
+            "cycle": ["C", "Z"],
+            "teacher_id": ["T001", "T002"],
+            "round": ["intl_r1", "intl_r1"],
+            "field": ["Comments", "Comments"],
+            "chars": ["5", "5"],
+            "req_certification": ["scuba", ""],
+        }
+    ).to_csv(root / "freetext/coding_sheet.csv", index=False)
+    (root / "key/issued_ids.txt").write_text(
+        s1.root_path(src_cfg, s1.ISSUED).read_text()
+    )
+
+
+def test_flat_layout_is_copied_into_the_cycle_once_and_left_in_place(tmp_path):
+    a = mini(tmp_path / "a", r1_names=True)
+    s1.run(a, quiet=True)
+    confirm_and_build(a)
+    flat = tmp_path / "b"
+    _flat_layout(a, flat)
+    before = {p: p.read_bytes() for p in flat.rglob("*") if p.is_file()}
+
+    b = mini(flat, r1_names=True)  # prepares cycle C: seeds from the flat layout
+
+    assert {p: p.read_bytes() for p in before} == before, "flat files changed"
+    key = flat / "key/C"
+    assert (key / "identity.csv").read_bytes() == (
+        flat / "key/identity.csv"
+    ).read_bytes()
+    assert set(_csv(key / "course_alias.csv")["cycle"]) == {"C"}
+    assert json.loads((key / "draft_inputs.json").read_text()).keys() == {"C"}
+    sheet = _csv(flat / "freetext/C/coding_sheet.csv")
+    assert sheet["teacher_id"].tolist() == ["T001"]
+    assert not (key / "issued_ids.txt").exists()
+
+    # confirmed IDs carry over: a rebuild keeps them and nothing needs review again
+    s1.run(b, quiet=True)
+    old, new = ids(a, s1.ID_FINAL)[1], ids(b)[1]
+    assert new == old
+    assert (ids(b)[0]["confirmed"] == "y").all()
+    s1.accept(b)
+    s2.run(b, quiet=True)
+    # this data has no free text, so the hand-coded row is dropped from the sheet,
+    # but a dated copy of the old sheet keeps it
+    [kept] = (flat / "freetext/C").glob("coding_sheet.*.csv")
+    assert _csv(kept)["req_certification"].tolist() == ["scuba"]
+
+    # copied once only: an edit in the cycle folder is never overwritten by the flat files
+    (key / "identity.csv").write_text("edited\n")
+    prepare_cycle(load_config(flat / "cfg.yaml"), "C", quiet=True)
+    assert (key / "identity.csv").read_text() == "edited\n"
+    assert {p: p.read_bytes() for p in before} == before, "flat files changed"
+
+
+def test_pipeline_skips_an_invalid_cycle_and_builds_the_valid_one(tmp_path):
+    mini(tmp_path)
+    cp = tmp_path / "cfg.yaml"
+    d = yaml.safe_load(cp.read_text())
+    bad = json.loads(json.dumps(d["cycles"]["C"]))
+    bad["preferences"][0]["round"] = "intl-r1"
+    d["cycles"]["D"] = bad
+    gone = json.loads(json.dumps(d["cycles"]["C"]))
+    gone["placements"]["path"] = "E/pl.xlsx"
+    d["cycles"]["E"] = gone
+    cp.write_text(yaml.safe_dump(d))
+    cfg = load_config(cp)
+
+    out = {k: pipeline.run_cycle(cfg, k, quiet=True) for k in ("C", "D", "E")}
+    assert out["D"].startswith("skipped") and "unknown round 'intl-r1'" in out["D"]
+    assert out["E"].startswith("skipped") and "missing input file" in out["E"]
+    assert "not applied" in out["C"] and "--accept" in out["C"]
+    for k in ("C", "D", "E"):
+        for area in ("key", "derived", "freetext"):
+            assert (tmp_path / area / k).is_dir()
+    assert not list((tmp_path / "key/D").iterdir())
+    assert (tmp_path / "key/C/identity_draft.csv").exists()
+
+    confirm_all(for_cycle(cfg, "C"))
+    s1.accept(for_cycle(cfg, "C"))
+    assert pipeline.run_cycle(cfg, "C", quiet=True).endswith("written")
+    assert (tmp_path / "derived/C/teachers.csv").exists()
+    assert not (tmp_path / "derived/teachers.csv").exists()
+
+
+def test_an_id_that_disagrees_with_another_cycle_is_kept_and_flagged(tmp_path):
+    cfg = mini(tmp_path)
+    s1.run(cfg, quiet=True)
+    confirm_and_build(cfg)
+    _, mine = ids(cfg, s1.ID_FINAL)
+    other = tmp_path / "key/Z"
+    other.mkdir()
+    pd.DataFrame(
+        {"teacher_id": ["T999"], "identifier": [f"aabbott@{D}"], "confirmed": ["y"]}
+    ).to_csv(other / "identity.csv", index=False)
+    s1.run(cfg, quiet=True)
+    df, now = ids(cfg)
+    assert now == mine  # this cycle's confirmed rows win
+    flags = df.loc[df["identifier"] == f"aabbott@{D}", "cluster_flags"].iloc[0]
+    assert "OTHER_CYCLE_ID" in flags and "OTHER_CYCLE_ID" in s1.SERIOUS
+
+
+def test_unconfirmed_draft_id_never_keeps_another_cycles_person_id(tmp_path):
+    """A leftover draft ID must not beat another cycle's accepted key: here Alan's
+    unconfirmed rows hold the ID that key gives Brian, so that ID would link two people."""
+    cfg = mini(tmp_path)
+    s1.run(cfg, quiet=True)
+    df, m = ids(cfg)
+    alan_id = m[f"aabbott@{D}"]
+    other = tmp_path / "key/Z"
+    other.mkdir()
+    pd.DataFrame(
+        {
+            "teacher_id": [alan_id, "T999"],
+            "identifier": ["Brian Baker", "Someone Elsewhere"],
+            "confirmed": ["y", "y"],
+        }
+    ).to_csv(other / "identity.csv", index=False)
+    s1.run(cfg, quiet=True)
+    df, now = ids(cfg)
+    assert now["Brian Baker"] == now[f"bbaker@{D}"] == alan_id, "accepted ID is used"
+    assert now[f"aabbott@{D}"] == now["Alan Abbott"] != alan_id, "stale ID is dropped"
+    assert not (df["confirmed"] == "y").any()
+
+
+def test_confirmed_or_edited_draft_id_still_beats_another_cycles_key(tmp_path):
+    cfg = mini(tmp_path)
+    s1.run(cfg, quiet=True)
+    _, m = ids(cfg)
+    alan_id = m[f"aabbott@{D}"]
+    _set(cfg, f"aabbott@{D}", confirmed="y")  # a decision, not a leftover
+    _set(cfg, "Alan Abbott", confirmed="y")
+    other = tmp_path / "key/Z"
+    other.mkdir()
+    pd.DataFrame(
+        {"teacher_id": [alan_id], "identifier": ["Brian Baker"], "confirmed": ["y"]}
+    ).to_csv(other / "identity.csv", index=False)
+    s1.run(cfg, quiet=True)
+    _, now = ids(cfg)
+    assert now[f"aabbott@{D}"] == now["Alan Abbott"] == alan_id

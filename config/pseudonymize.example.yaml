@@ -4,7 +4,9 @@
 # ignores case and repeated spaces, so "First Preference " (trailing space, as
 # in the 2026 international form) still matches "First Preference".
 #
-# Everything is written under private_root: key/, derived/, freetext/.
+# Each cycle below is written to its own folders under private_root:
+# key/<cycle>/, derived/<cycle>/ and freetext/<cycle>/. A cycle whose settings or
+# raw files are not valid is skipped by `pipeline` and the other cycles still run.
 # Both private_root and raw_dir must be outside the repository; the scripts
 # refuse to run otherwise.
 

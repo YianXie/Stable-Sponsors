@@ -461,7 +461,7 @@ def load_observed_placements(path: Path, cycle: Cycle) -> tuple[ObservedPlacemen
     """Reads observed placement data from a CSV file and returns a tuple of ObservedPlacement objects.
 
     Only rows with status "assigned" in the cycle's year are placements: the file
-    also holds empty sponsor slots (no teacher) and, in derived/, every cycle.
+    also holds empty sponsor slots (no teacher), and a fixture may hold several cycles.
 
     Args:
         path (Path): The path to the CSV file containing observed placement data.
@@ -608,7 +608,7 @@ def load_cycle(
     Args:
         base (Path): The base path to the directory containing the CSV files.
         params_dir (Path | None, optional): An optional path to the directory containing parameter CSV files. If not provided, it defaults to the base path.
-        cycle (int | None, optional): Keep only rows for this cycle. derived/ holds every cycle in the same files, so pass this for real data. None keeps all rows (fine for single-cycle fixtures).
+        cycle (int | None, optional): Keep only rows for this cycle. Pass this for real data: each derived/<cycle>/ folder holds one cycle, and the filter guards against reading the wrong one. None keeps all rows (fine for single-cycle fixtures).
         lineage_path (Path | None, optional): The prior-year -> this-year course lineage CSV. Defaults to params_dir / "course_lineage.csv".
         use_lineage (bool, optional): False disables the lineage fix: repeaters are matched to this year's courses by code (resolve_incumbency_by_code) and lineage_path is not read. Only for reproducing pre-fix runs. Defaults to True.
 

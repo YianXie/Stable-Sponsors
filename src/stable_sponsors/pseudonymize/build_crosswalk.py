@@ -1,15 +1,23 @@
 """Stage 1 of 2: propose the identity key and the course mapping for review.
 
-    uv run python -m stable_sponsors.pseudonymize.build_crosswalk --config config/pseudonymize.yaml
-    # review the three drafts under key/, set confirmed=y on every row, then
-    uv run python -m stable_sponsors.pseudonymize.build_crosswalk --config config/pseudonymize.yaml --accept
+    uv run python -m stable_sponsors.pseudonymize.build_crosswalk --cycle 2027
+    # review the three drafts under key/2027/, set confirmed=y on every row, then
+    uv run python -m stable_sponsors.pseudonymize.build_crosswalk --cycle 2027 --accept
 
-Writes under private_root/key/:
+Without --cycle, every cycle in the config is processed in turn. Each cycle is
+built on its own and writes under private_root/key/<cycle>/:
     identity_draft.csv         one row per email or name; rows sharing a teacher_id
-                               are one person across all cycles
+                               are one person
     course_alias_draft.csv     every course string (offerings, forms, prior course)
                                -> course_id
-    course_catalogue_draft.csv one row per course per cycle, with its type
+    course_catalogue_draft.csv one course per row, with its type
+
+A teacher keeps one ID across cycles: any email or name that another cycle's
+accepted key (key/<other>/identity.csv) gives an ID is proposed with that ID,
+and identifiers that key puts under one ID are linked here too. Only rows you
+confirmed or edited in this cycle can hold a different ID (flagged OTHER_CYCLE_ID).
+IDs are handed out from key/issued_ids.txt, shared by all cycles, so none is ever
+issued twice.
 
 Nothing is confirmed automatically. Re-running reads your edited drafts, keeps
 every confirmed row and every teacher_id already assigned, and never re-merges
@@ -52,7 +60,9 @@ from stable_sponsors.pseudonymize.idmap import (
     norm_name,
     out_path,
     phrase_in,
+    root_path,
 )
+from stable_sponsors.pseudonymize.layout import for_each_cycle
 from stable_sponsors.pseudonymize.sources import load_all
 
 ID_DRAFT, ID_FINAL = "key/identity_draft.csv", "key/identity.csv"
@@ -60,11 +70,13 @@ ALIAS_DRAFT, ALIAS_FINAL = "key/course_alias_draft.csv", "key/course_alias.csv"
 CAT_DRAFT, CAT_FINAL = "key/course_catalogue_draft.csv", "key/course_catalogue.csv"
 KEY_FILES = ((ID_DRAFT, ID_FINAL), (ALIAS_DRAFT, ALIAS_FINAL), (CAT_DRAFT, CAT_FINAL))
 DRAFT_MANIFEST = "key/draft_inputs.json"
-ISSUED = "key/issued_ids.txt"  # every teacher_id ever handed out; never reused
+# every teacher_id ever handed out, in any cycle; never reused. Shared, so it is
+# read with root_path(), not out_path().
+ISSUED = "key/issued_ids.txt"
 YES = {"y", "yes", "true", "1"}
 NAME_LINK_MIN = 0.75  # name-to-name similarity needed to merge
 LOW_MARGIN = 0.10
-STRONG_METHODS = {"same_row", "prior_confirmed", "same_name"}
+STRONG_METHODS = {"same_row", "prior_confirmed", "same_name", "other_cycle_key"}
 SERIOUS = [
     "MULTI_EMAIL",
     "MULTI_NAME",
@@ -72,13 +84,13 @@ SERIOUS = [
     "NO_NAME",
     "LOW_MARGIN",
     "WEAK_LINK",
-    "CROSS_CYCLE_LINK",
     "NEAR_MISS",
     "FORM_NAME_UNLIKE_EMAIL",
     "TWO_SLOTS_SAME_CYCLE",
     "PLACED_OFF_LIST",
     "SINGLE_TOKEN_NAME",
     "PRIOR_ID_CONFLICT",
+    "OTHER_CYCLE_ID",
 ]
 EXACT = {"exact_name", "exact_code"}
 # what the data asserts about an offering; a confirmed choice that disagrees is challenged
@@ -128,18 +140,15 @@ def read_prior(cfg, final_rel, draft_rel, key_fn):
         if p.exists():
             df = pd.read_csv(p, dtype=str).fillna("")
             lacking = REQUIRED_COLS[key_fn] - set(df.columns)
-            if lacking:  # written by an earlier version of the pipeline: set it aside
-                legacy = out_path(cfg, "key/backup/legacy")
-                legacy.mkdir(parents=True, exist_ok=True)
-                p.rename(legacy / stamped_name(p))
+            if lacking:  # written by an earlier version of the pipeline: ignore it
                 print(
-                    f"  ! {rel} is in an older format (no {sorted(lacking)} column); "
-                    "moved to key/backup/legacy/ and ignored. Its confirmations are not "
-                    "carried over."
+                    f"  ! {p.name} is in an older format (no {sorted(lacking)} column); "
+                    "ignored, and its confirmations are not carried over. The file "
+                    "stays in place; a copy goes to backup/ before it is overwritten."
                 )
                 continue
             frames.append(df)
-            used.append(rel)
+            used.append(str(p.relative_to(cfg["_private_root"])))
     if not frames:
         return None, None
     df = pd.concat(frames, ignore_index=True).fillna("")
@@ -168,12 +177,13 @@ REQUIRED_COLS = {
 
 
 def issued_ids(cfg) -> set:
-    p = out_path(cfg, ISSUED)
+    p = root_path(cfg, ISSUED)
     return set(p.read_text().split()) if p.exists() else set()
 
 
 def record_issued(cfg, ids):
-    p = out_path(cfg, ISSUED)
+    p = root_path(cfg, ISSUED)
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("\n".join(sorted((issued_ids(cfg) | set(ids)) - {""})) + "\n")
 
 
@@ -209,6 +219,26 @@ def resolve_new_ids(df, exclude=()):
     df = df.copy()
     df["teacher_id"] = [mapping[k] if k else t for k, t in zip(keys, tids)]
     return df, mapping
+
+
+def other_cycle_ids(cfg) -> dict:
+    """node key -> teacher_id from every other cycle's accepted key/<cycle>/identity.csv.
+
+    An identifier that two other cycles give different IDs is left out: that
+    disagreement belongs to those cycles' reviews, not to a proposal here.
+    """
+    seen = defaultdict(set)
+    for p in sorted(root_path(cfg, "key").glob("*/identity.csv")):
+        if p.parent.name == cfg["_cycle"]:
+            continue
+        df = pd.read_csv(p, dtype=str).fillna("")
+        if not {"teacher_id", "identifier"} <= set(df.columns):
+            continue
+        for ident, tid in zip(df["identifier"], df["teacher_id"].str.strip()):
+            k = node_key(ident)
+            if k and re.fullmatch(r"T\d{3}", tid):
+                seen[k].add(tid)
+    return {k: tids.pop() for k, tids in seen.items() if len(tids) == 1}
 
 
 # ==========================================================================
@@ -364,6 +394,24 @@ def build_identity(cfg, cycles):
             else:
                 stale_rows.append(r._asdict())
 
+    # ---- other cycles' accepted keys: the same email or name keeps its ID, and people
+    # that key joined are joined here. A row confirmed or edited here is a decision and
+    # stays. An unconfirmed ID is a leftover guess: it gives way, and one that belongs to
+    # someone in that key is dropped, or two people would share an ID across cycles.
+    other_ids = other_cycle_ids(cfg)
+    owned = set(other_ids.values())
+    reserved |= owned
+    by_other = defaultdict(list)
+    for k, nd in nodes.items():
+        if k in other_ids:
+            by_other[other_ids[k]].append(k)
+        if nd.prior_strong:
+            continue
+        if k in other_ids:
+            nd.prior_tid = nd.prior_proposed = other_ids[k]
+        elif nd.prior_tid in owned:
+            nd.prior_tid = nd.prior_proposed = ""
+
     cl = Clusters(nodes)
     by_tid = defaultdict(list)
     for k, nd in nodes.items():
@@ -391,34 +439,24 @@ def build_identity(cfg, cycles):
             if s >= 0.5:
                 edges.append((s, "name_variant", a, b))
 
+    # same_row and one person in another cycle's accepted key are forced evidence
+    for ks in by_other.values():
+        for k in ks[1:]:
+            edges.append((1.0, "other_cycle_key", ks[0], k))
     blocked = Counter()
-    for s, m, a, b in edges:  # same_row is forced evidence
-        if m == "same_row":
+    for s, m, a, b in edges:
+        if m in ("same_row", "other_cycle_key"):
             ok, why = cl.can_merge(a, b, forced=True)
             if ok:
                 cl.union(a, b)
             elif why != "same_cluster":
                 blocked[why] += 1
 
-    def cycles(k):
-        return {src.split(":", 1)[0] for src in nodes[k].sources}
-
-    def same_cycle(a, b):
-        """An address used in 2027 more plausibly belongs to a name placed in 2027."""
-        return bool(cycles(a) & cycles(b))
-
     order = {"exact_key": 0, "name_variant": 1, "weak_key": 2, "fuzzy": 3}
     for s, m, a, b in sorted(
-        edges,
-        key=lambda t: (
-            -t[0],
-            not same_cycle(t[2], t[3]),
-            order.get(t[1], 9),
-            t[2],
-            t[3],
-        ),
+        edges, key=lambda t: (-t[0], order.get(t[1], 9), t[2], t[3])
     ):
-        if m == "same_row":
+        if m in ("same_row", "other_cycle_key"):
             continue
         need = NAME_LINK_MIN if m == "name_variant" else floor
         if s < need:
@@ -442,7 +480,8 @@ def build_identity(cfg, cycles):
         if r in tid_of:
             continue
         hints = Counter(nodes[m].prior_tid for m in cl.members[r] if nodes[m].prior_tid)
-        for tid, _ in hints.most_common():
+        accepted = Counter(other_ids[m] for m in cl.members[r] if m in other_ids)
+        for tid, _ in accepted.most_common() + hints.most_common():
             if tid not in taken:
                 tid_of[r] = tid
                 taken.add(tid)
@@ -483,6 +522,8 @@ def build_identity(cfg, cycles):
             flags.add("SINGLE_TOKEN_NAME")
         if r in soft_conflict:
             flags.add("PRIOR_ID_CONFLICT")
+        if any(other_ids.get(k, tid_of[r]) != tid_of[r] for k in mem):
+            flags.add("OTHER_CYCLE_ID")
         for ek, nk in same_row:
             if (
                 ek in mem
@@ -512,8 +553,6 @@ def build_identity(cfg, cycles):
                     flags.add("LOW_MARGIN")
                 if bs[1] in ("fuzzy", "weak_key") and bs[0] < WEAK_LINK_BELOW:
                     flags.add("WEAK_LINK")
-                if not same_cycle(k, bs[2]):
-                    flags.add("CROSS_CYCLE_LINK")
             method_counts[method] += 1
             details[k] = {
                 "method": method,
@@ -582,6 +621,9 @@ def build_identity(cfg, cycles):
         "stale_prior_rows": len(stale_rows),
         "new_ids": len(new_ids),
         "confirmed_rows": sum(r["confirmed"] == "y" for r in rows),
+        "shared_with_other_cycles": sum(
+            other_ids.get(k) == tid_of[cl.find(k)] for k in nodes
+        ),
     }
     return rows, report
 
@@ -1217,7 +1259,8 @@ def accept(cfg):
         backup(cfg, final)
         frames[draft].to_csv(out_path(cfg, draft), index=False)  # NEW ids written back
         shutil.copy2(out_path(cfg, draft), out_path(cfg, final))
-        print(f"accepted {draft} -> {final}")
+        shown = out_path(cfg, draft).relative_to(cfg["_private_root"])
+        print(f"accepted {shown} -> {out_path(cfg, final).name}")
 
 
 def run(cfg, quiet=False):
@@ -1315,7 +1358,7 @@ def run(cfg, quiet=False):
 def print_report(cycles, id_rep, id_rows, summaries, notes, alias_all, cat_all, cfg):
     bar = "=" * 70
     print(bar)
-    print("IDENTITY (all cycles)")
+    print(f"IDENTITY {cfg['_cycle']}")
     print(bar)
     print(
         f"  emails {id_rep['nodes_email']}   distinct names {id_rep['nodes_name']}   "
@@ -1340,6 +1383,11 @@ def print_report(cycles, id_rep, id_rows, summaries, notes, alias_all, cat_all, 
         print(
             f"  placed on a course not on their own lists: {id_rep['off_list']} "
             "(PLACED_OFF_LIST; verify these links first)"
+        )
+    if id_rep.get("shared_with_other_cycles"):
+        print(
+            f"  identifiers keeping the ID another cycle's key gives them: "
+            f"{id_rep['shared_with_other_cycles']}"
         )
     if id_rep.get("new_ids"):
         print(f"  NEW entries given fresh ids: {id_rep['new_ids']}")
@@ -1419,16 +1467,17 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument(
+        "--cycle",
+        action="append",
+        help="cycle to process (repeatable; default: every cycle in the config)",
+    )
+    ap.add_argument(
         "--accept",
         action="store_true",
         help="promote fully confirmed drafts to the final key files",
     )
     args = ap.parse_args()
-    cfg = load_config(args.config)
-    if args.accept:
-        accept(cfg)
-    else:
-        run(cfg)
+    for_each_cycle(load_config(args.config), args.cycle, accept if args.accept else run)
 
 
 if __name__ == "__main__":
