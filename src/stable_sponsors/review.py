@@ -23,11 +23,12 @@ Console output is counts only. ``--list`` adds T### IDs (allowed by the privacy 
 import argparse
 import json
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from stable_sponsors.compare import fallback_origin
-from stable_sponsors.data import Preference, Teacher, read_csv
+from stable_sponsors.data import Cycle, Preference, Teacher, read_csv
 from stable_sponsors.model import (
     DETERMINACY_KEY,
     OPTIMAL_KEY,
@@ -322,17 +323,28 @@ def latest_run(runs: Path) -> Path:
     raise SystemExit(f"no run with determinacy in {runs}; run `model --optimize` first")
 
 
-def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])  # pyright: ignore[reportOptionalMemberAccess]
-    ap.add_argument("--config", default=DEFAULT_CONFIG)
-    ap.add_argument(
-        "--run", type=Path, help="run JSON (default: latest one with determinacy)"
-    )
-    ap.add_argument("--list", action="store_true", help="also print T### IDs per cell")
-    args = ap.parse_args(argv)
+@dataclass(frozen=True)
+class ReviewResult:
+    run: dict  # the parsed run JSON
+    stats: dict  # exactly what _reproduction.json contains, including "run"
+    cycle: Cycle
+    office: Assignment
+    out_path: Path  # the _reproduction.json written
+    stale_warning: str | None
+    pin_warning: str | None
+    not_in_run_warning: str | None
 
-    config = load_config(args.config)
-    run_path = args.run or latest_run(out_path(config, "runs"))
+    @property
+    def warnings(self) -> list[str]:
+        return [
+            w
+            for w in (self.stale_warning, self.pin_warning, self.not_in_run_warning)
+            if w is not None
+        ]
+
+
+def review_run(config: dict, run_path: Path) -> ReviewResult:
+    """Score one run against the office's placements and write its _reproduction.json."""
     run = json.loads(run_path.read_text())
     if (
         DETERMINACY_KEY not in run
@@ -344,9 +356,10 @@ def main(argv: list[str] | None = None) -> None:
 
     placements = out_path(for_cycle(config, run["cycle"]), "derived") / "placements.csv"
     ran_at = datetime.fromisoformat(run["when"])
+    stale_warning = None
     if datetime.fromtimestamp(placements.stat().st_mtime) > ran_at:
-        print(
-            f"WARNING: placements.csv changed after this run ({run['when']}). Re-run the model.\n"
+        stale_warning = (
+            f"placements.csv changed after this run ({run['when']}). Re-run the model."
         )
 
     office = load_office(placements, run["cycle"])
@@ -395,6 +408,45 @@ def main(argv: list[str] | None = None) -> None:
     s["office_unranked_costs"] = known_costs
     s["office_unranked_forbidden"] = len(costs) - len(known_costs)
 
+    pin_warning = None
+    if off_pin:
+        pin_warning = (
+            f"{len(off_pin)} pinned repeater(s) not in their incumbent course in this run;"
+            " the data changed since the run. Re-run the model."
+        )
+    not_in_run_warning = None
+    if s["office_not_in_run"]:
+        not_in_run_warning = f"{len(s['office_not_in_run'])} office-placed teacher(s) not in the run (not scored)"
+
+    out = run_path.with_name(
+        run_path.stem.removesuffix(RUN_SUFFIX) + "_reproduction.json"
+    )
+    stats = {"run": run_path.name, **s}
+    out.write_text(json.dumps(stats, indent=2))
+    return ReviewResult(
+        run, stats, cycle, office, out, stale_warning, pin_warning, not_in_run_warning
+    )
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])  # pyright: ignore[reportOptionalMemberAccess]
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
+    ap.add_argument(
+        "--run", type=Path, help="run JSON (default: latest one with determinacy)"
+    )
+    ap.add_argument("--list", action="store_true", help="also print T### IDs per cell")
+    args = ap.parse_args(argv)
+
+    config = load_config(args.config)
+    run_path = args.run or latest_run(out_path(config, "runs"))
+    r = review_run(config, run_path)
+    run, s = r.run, r.stats
+    c = s["cells"]
+    overlap = s["unranked_overlap"]
+    known_costs = s["office_unranked_costs"]
+    if r.stale_warning:
+        print(f"WARNING: {r.stale_warning}\n")
+
     print(
         f"run: {run_path.name}  cycle {run['cycle']}  excluded rules: {run['excluded'] or 'none'}"
     )
@@ -415,15 +467,10 @@ def main(argv: list[str] | None = None) -> None:
     print(
         f"repeaters pinned by model: {s['repeaters_pinned']} of {s['repeaters']} ({pin_note})"
     )
-    if off_pin:
-        print(
-            f"WARNING: {len(off_pin)} pinned repeater(s) not in their incumbent course in this run;"
-            " the data changed since the run. Re-run the model."
-        )
-    if s["office_not_in_run"]:
-        print(
-            f"WARNING: {len(s['office_not_in_run'])} office-placed teacher(s) not in the run (not scored)"
-        )
+    if r.pin_warning:
+        print(f"WARNING: {r.pin_warning}")
+    if r.not_in_run_warning:
+        print(f"WARNING: {r.not_in_run_warning}")
     print()
     print(f"{'':12}{'match':>8}{'mismatch':>10}{'total':>8}")
     for d in ("determined", "contested"):
@@ -472,11 +519,7 @@ def main(argv: list[str] | None = None) -> None:
         if s["office_not_in_run"]:
             print(f"\noffice_not_in_run: {' '.join(s['office_not_in_run'])}")
 
-    out = run_path.with_name(
-        run_path.stem.removesuffix(RUN_SUFFIX) + "_reproduction.json"
-    )
-    out.write_text(json.dumps({"run": run_path.name, **s}, indent=2))
-    print(f"\nwrote {out.name}")
+    print(f"\nwrote {r.out_path.name}")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,13 @@
 import json
+import os
+import time
 from dataclasses import replace
 
 import pytest
 
 from stable_sponsors import model, review
 from stable_sponsors.data import Preference, Teacher
+from stable_sponsors.pseudonymize.idmap import load_config
 from stable_sponsors.review import (
     MISMATCH_CATEGORIES,
     claim_scores,
@@ -312,3 +315,37 @@ def test_unranked_overlap_counts_a_course_both_used_with_different_teachers():
     out = unranked_overlap(model, office, scores, {})
     assert out["same_course"] == []
     assert out["courses_in_common"] == ["B"]
+
+
+def _run(tmp_path):
+    cfg = load_config(make_private_root(tmp_path))
+    # run "when" is truncated to whole seconds: backdate so same-second writes aren't "stale"
+    placements = tmp_path / "private" / "derived" / "2027" / "placements.csv"
+    past = time.time() - 3600
+    os.utime(placements, (past, past))
+    path, _ = model.run_model(cfg, 2027, RULES_PATH, optimize=True, log=lambda _: None)
+    return cfg, path
+
+
+def test_review_run_writes_what_it_returns(tmp_path):
+    cfg, path = _run(tmp_path)
+    r = review.review_run(cfg, path)
+    assert json.loads(r.out_path.read_text()) == r.stats
+    assert r.stats["run"] == path.name
+    assert r.stats["teachers"] == 5
+    assert r.warnings == []
+
+
+def test_review_run_reports_stale_placements(tmp_path):
+    cfg, path = _run(tmp_path)
+    placements = tmp_path / "private" / "derived" / "2027" / "placements.csv"
+    future = time.time() + 3600
+    os.utime(placements, (future, future))
+    assert "placements.csv changed" in review.review_run(cfg, path).warnings[0]
+
+
+def test_review_run_refuses_a_run_without_determinacy(tmp_path):
+    cfg = load_config(make_private_root(tmp_path))
+    path, _ = model.run_model(cfg, 2027, RULES_PATH, log=lambda _: None)
+    with pytest.raises(SystemExit):
+        review.review_run(cfg, path)
