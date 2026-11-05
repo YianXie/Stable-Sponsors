@@ -18,6 +18,12 @@ uv run pytest tests/rules/test_hard_rules.py::test_repeater_cannot_be_moved_out 
 
 `pyproject.toml` uses the `uv_build` backend, so `uv sync` installs the package in editable mode and `uv run python -m stable_sponsors.<module>` works directly, e.g. `uv run python -m stable_sponsors.pseudonymize.build_crosswalk --help`. pytest also adds `src/` and `tools/` through `pythonpath`.
 
+```sh
+make api                           # uvicorn stable_sponsors.api:app on 127.0.0.1:8000
+make web                           # Vite dev server for frontend/
+cd frontend && npm test && npm run build   # frontend checks; not in CI or make ci-local
+```
+
 ## Architecture
 
 The code has two independent halves.
@@ -41,4 +47,5 @@ This turns the office's raw spreadsheets, which contain real names and emails, i
 - Rule IDs, classes (hard/priority/tiebreak), params and status (`documented`/`reported`/`assumed`/`deferred`/`contradicted`) come from `config/rules-2027.yaml`. That file is tracked (it holds no personal data); `rules-2027.example.yaml` is currently empty. Every encoder ID must match an entry there. `tests/rules/test_registry.py` calls every non-deferred encoder and marks it xfail while it raises `NotImplementedError`. Priority rules 1 (`rank_preference`), 6 (`round_precedence`) and 11 (`unranked_fallback`, a secondary term in `objective_expr`) are implemented; 2 (`past_experience`, deferred) and the tiebreak encoder 7 are still stubs. `model.py` builds the model from the YAML rules and checks feasibility, the optimum and determinacy; with `--optimize` it writes `private_root/runs/<when>_model_run.json`.
 - Analysis CLIs: `review.py` reads a run JSON and scores it against the office's `derived/<cycle>/placements.csv` (only "determined and match" counts as reproduction; determined mismatches are classified). `compare.py` counts rule violations in the observed placements. `course_set_check.py` tests whether the course set was fixed before allocation (rule 10). `interview_checks.py` counts how far the data agree with the 2026-10-28 interview. Frozen rule sets (`config/rules-2027-v2.3.yaml`, `-v3.0.yaml`) replay old runs; only `deferred` and `contradicted` rules are inactive. `review.py` replaces the old `reproduction.py`. `README.md` lists the full run order.
 - Where the rules come from: `docs/procedure-doc-rules-v1.0.md` (the office's document, D-xxx), `docs/my-understanding-of-rules-v2.0.md` (interview notes, M-xxx), and `docs/procedure-diff-v1.1.md` (comparison categories A–E). The YAML `source` fields refer to these diff entries. `docs/encoding-decisions.md` records modelling assumptions. Add any new assumption there.
+- `api.py`: `create_app()` / `app` serve `POST /api/allocations` for cycle 2027. It calls the same `model.run_model` and `review.review_run` as the CLIs, so a web run writes the usual `runs/*_model_run.json` and `_reproduction.json` and counts as the latest run for `review`. One solve at a time (409 otherwise). The response is built from an allow-list (`T###` IDs, trip codes, course type, country, review stats), and errors are fixed text per code, never exception text. `frontend/` is the Vite React TypeScript page that calls it.
 - The test fixture is `tests/fixtures/toy_cycle/`, exposed as the `toy_cycle` and `ctx` fixtures in `tests/conftest.py`.

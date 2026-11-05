@@ -51,6 +51,17 @@ Diagnostics:
 
 Stage 1 and stage 2 can also be run by hand (`build_crosswalk`, `apply_pseudonymization`, both with `--cycle`). See [`docs/pseudonymization.md`](docs/pseudonymization.md) for the full pipeline manual, including how IDs carry across cycles and how a pre-existing single-folder `key/`, `derived/` and `freetext/` is copied, never moved, into the per-cycle folders.
 
+## Web UI
+
+A local page that runs the model and shows the allocation next to the office's placements. Use two terminals from the repo root:
+
+```sh
+make api    # FastAPI on 127.0.0.1:8000
+make web    # Vite dev server for frontend/ (needs `npm install` in frontend/ once)
+```
+
+It is local only; it reads the private data through `config/pseudonymize.yaml`. Each click on "Generate allocation" takes about a minute and writes the usual run and reproduction files to `runs/`, so `review` treats a web run as the latest. The browser receives only `T###` IDs, trip codes, course type, country and review results.
+
 ## Repository layout
 
 ```text
@@ -64,6 +75,8 @@ src/stable_sponsors/
   compare.py         rule violations in the observed placements
   interview_checks.py
   course_set_check.py
+  api.py             local web API: POST /api/allocations (uses model.run_model and review.review_run)
+frontend/            Vite React TypeScript page for the web UI
 config/              rules-2027.yaml (rule spec), *.example.yaml templates
 docs/                procedure diff, encoding decisions, reports
 tests/               pytest suite; fixtures/toy_cycle is a small fake cycle
