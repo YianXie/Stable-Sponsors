@@ -291,6 +291,11 @@ button:disabled {
   width: calc(100% + 16px);
 }
 
+.split {
+  margin: 0;
+  font-weight: 600;
+}
+
 .matrix thead > tr > :first-child {
   width: 28%;
 }

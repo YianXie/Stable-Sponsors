@@ -26,6 +26,10 @@ export function Headline({ review }: { review: Review }) {
         <Share share={review.share_of_all} label="of all teachers" />
         <Share share={review.share_of_determined} label="of determined teachers" />
       </div>
+      <p className="split">
+        {review.determined_match_placed} placed on the same course,{' '}
+        {review.determined_match_unplaced} left unplaced by both
+      </p>
       <p className="plain">
         Reproduced means the rules give this teacher the same placement in every optimal solution,
         and it matches the office's.

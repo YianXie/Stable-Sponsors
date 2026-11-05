@@ -42,6 +42,23 @@ describe('Results headline', () => {
     ).toBeInTheDocument()
   })
 
+  it('splits the reproduced count into placed and left unplaced', () => {
+    const base = makeResponse()
+    setup({
+      review: {
+        ...base.review,
+        determined_match: 36,
+        determined_match_placed: 30,
+        determined_match_unplaced: 6,
+      },
+    })
+    expect(
+      within(screen.getByRole('region', { name: 'Headline' })).getByText(
+        '30 placed on the same course, 6 left unplaced by both',
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('shows warnings only when present', () => {
     const { unmount } = setup()
     expect(screen.queryByRole('region', { name: 'Warnings' })).not.toBeInTheDocument()
@@ -424,6 +441,7 @@ describe('Results details', () => {
       teachers: [],
     })
     expect(screen.getByText('0 / 5')).toBeInTheDocument()
+    expect(screen.getByText('0 placed on the same course, 0 left unplaced by both')).toBeInTheDocument()
     expect(screen.getAllByText('0.0%')).toHaveLength(2)
     expect(container.textContent).not.toContain('NaN')
 
