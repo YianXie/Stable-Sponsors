@@ -17,6 +17,7 @@ from stable_sponsors.model import (
     placement_costs,
     solve_optimal,
 )
+from stable_sponsors.pseudonymize.idmap import load_config
 from stable_sponsors.rules.context import build_ctx
 from tests.conftest import RULES_PATH, make_private_root
 
@@ -285,3 +286,24 @@ def test_min_fallbacks_counts_what_the_hard_rules_force():
     )
     rule_10 = {"id": 10, "class": "hard", "status": "assumed", "params": {}}
     assert min_fallbacks(cycle, _rules() + [rule_10], frozenset({4})) == 2
+
+
+def test_run_model_returns_written_report(tmp_path):
+    cfg = load_config(make_private_root(tmp_path))
+    logged = []
+    path, report = model.run_model(
+        cfg, 2027, RULES_PATH, optimize=True, log=logged.append
+    )
+    assert json.loads(path.read_text()) == report
+    assert path.name.endswith(f"{model.RUN_SUFFIX}.json")
+    assert report[model.OPTIMAL_KEY]["status"] == "optimal"
+    assert set(report[model.DETERMINACY_KEY]) == set(
+        report[model.OPTIMAL_KEY]["assignment"]
+    )
+    assert any("STATUS: FEASIBLE" in line for line in logged)
+
+
+def test_run_model_silent_log_prints_nothing(tmp_path, capsys):
+    cfg = load_config(make_private_root(tmp_path))
+    model.run_model(cfg, 2027, RULES_PATH, optimize=True, log=lambda _: None)
+    assert capsys.readouterr().out == ""
