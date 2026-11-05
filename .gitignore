@@ -248,3 +248,5 @@ docs/interview-*.md
 docs/procedure-doc-rules-*.md
 config/pseudonymize.yaml
 superpowers
+frontend/node_modules/
+frontend/dist/
