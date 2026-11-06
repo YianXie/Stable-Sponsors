@@ -77,3 +77,11 @@ def cycle(
             for p in prefs
         ),
     )
+
+
+def lex_cycle() -> Cycle:
+    """X and Y seat one each. T1: X#1 (27), Y#5 (23). T2: X#5 (23), Y#7 (21)."""
+    return cycle(
+        [("T1", "X", 1), ("T1", "Y", 5), ("T2", "X", 5), ("T2", "Y", 7)],
+        [course("X", 1, 1), course("Y", 1, 1)],
+    )
