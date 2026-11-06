@@ -182,21 +182,42 @@ def determinacy(cycle, rules, exclude=frozenset(), time_limit=10.0) -> dict[str,
         raise RuntimeError(
             "check model can't reach the optimum: base and check models differ"
         )
+    assert base.value is not None  # always set when status is "optimal"
+    return determinacy_on(
+        ctx.model, ctx.x, list(ctx.y), base.assignment, base.value, time_limit
+    )
+
+
+def determinacy_on(
+    model: cp_model.CpModel,
+    x: dict[tuple[str, str], cp_model.IntVar],
+    course_ids: list[str],
+    assignment: dict[str, str | None],
+    value: int,
+    time_limit: float,
+) -> dict[str, bool]:
+    """Which teachers' placements are the same in every optimal solution of `model`.
+
+    `model` already has its objective set, and `value` is its optimum. For each teacher, a clone
+    forbids their placement (or, if unplaced, requires one): if that clone is infeasible or its
+    optimum falls below `value`, the teacher is determined.
+    """
     out = {}
-    for tid, cid in base.assignment.items():
-        model = ctx.model.clone()
-        x = {
-            c: model.get_bool_var_from_proto_index(ctx.x[(tid, c)].index) for c in ctx.y
+    for tid, cid in assignment.items():
+        check = model.clone()
+        xt = {
+            c: check.get_bool_var_from_proto_index(x[(tid, c)].index)
+            for c in course_ids
         }
         if cid is None:
-            model.add(sum(x.values()) >= 1)
+            check.add(sum(xt.values()) >= 1)
         else:
-            model.add(x[cid] == 0)
-        solver, code = _solve(model, time_limit)
+            check.add(xt[cid] == 0)
+        solver, code = _solve(check, time_limit)
         if code == cp_model.INFEASIBLE:
             out[tid] = True
         elif code == cp_model.OPTIMAL:
-            out[tid] = round(solver.objective_value) < base.value  # True = determined
+            out[tid] = round(solver.objective_value) < value  # True = determined
         else:
             raise RuntimeError(f"timed out checking {tid}")
     return out
