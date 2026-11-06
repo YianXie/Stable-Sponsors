@@ -215,20 +215,21 @@ Hard rules are constraints. Priority rules make up the objective.
 
 ### 5.4 Run log
 
-| Run | Date       | Variant                                                          | Lineage fix? | Rules excluded | Report file                        |
-| --- | ---------- | ---------------------------------------------------------------- | ------------ | -------------- | ---------------------------------- |
-| R1  | 2026-10-24 | unconstrained                                                    | no           | 10             | `2026-10-24T170917_model_run.json` |
-| R2  | 2026-10-24 | conditional                                                      | no           | —              | `2026-10-24T170757_model_run.json` |
-| R3  | 2026-10-24 | conditional                                                      | yes          | -              | `2026-10-24T170013_model_run.json` |
-| R3′ | 2026-11-01 | fixed set (`rules-2027-v2.3.yaml`)                               | yes          | -              | `2026-11-01T181831_model_run.json` |
-| R4  | 2026-11-01 | primary (`rules-2027.yaml`)                                      | yes          | -              | `2026-11-01T181836_model_run.json` |
-| R6  | 2026-11-01 | round order (`rules-2027-r6-round-order.yaml`)                   | yes          | -              | `2026-11-01T181940_model_run.json` |
-| R7  | 2026-11-01 | no gender (`rules-2027.yaml`)                                    | yes          | 5              | `2026-11-01T182012_model_run.json` |
-| R5  | 2026-11-01 | fallback (`rules-2027-v3.1.yaml`)                                | yes          | 4              | `2026-11-01T185701_model_run.json` |
-| R8  | 2026-11-01 | fallback, equal rounds (`rules-2027-v3.1-round-order.yaml`)      | yes          | 4              | `2026-11-01T190313_model_run.json` |
-| R9  | 2026-11-01 | fallback, no gender (`rules-2027-v3.1.yaml`)                     | yes          | 4, 5           | `2026-11-01T190556_model_run.json` |
-| R10 | 2026-11-01 | fallback, office's course set (`rules-2027-v3.1-fixed-set.yaml`) | yes          | 4              | `2026-11-01T190802_model_run.json` |
-| H1  | 2026-11-06 | **2026 holdout**, frozen (`rules-2027-v3.1.yaml`), cycle 2026    | n/a          | -              | `2026-11-06T195230_model_run.json` |
+| Run | Date       | Variant                                                                          | Lineage fix? | Rules excluded | Report file                        |
+| --- | ---------- | -------------------------------------------------------------------------------- | ------------ | -------------- | ---------------------------------- |
+| R1  | 2026-10-24 | unconstrained                                                                    | no           | 10             | `2026-10-24T170917_model_run.json` |
+| R2  | 2026-10-24 | conditional                                                                      | no           | —              | `2026-10-24T170757_model_run.json` |
+| R3  | 2026-10-24 | conditional                                                                      | yes          | -              | `2026-10-24T170013_model_run.json` |
+| R3′ | 2026-11-01 | fixed set (`rules-2027-v2.3.yaml`)                                               | yes          | -              | `2026-11-01T181831_model_run.json` |
+| R4  | 2026-11-01 | primary (`rules-2027.yaml`)                                                      | yes          | -              | `2026-11-01T181836_model_run.json` |
+| R6  | 2026-11-01 | round order (`rules-2027-r6-round-order.yaml`)                                   | yes          | -              | `2026-11-01T181940_model_run.json` |
+| R7  | 2026-11-01 | no gender (`rules-2027.yaml`)                                                    | yes          | 5              | `2026-11-01T182012_model_run.json` |
+| R5  | 2026-11-01 | fallback (`rules-2027-v3.1.yaml`)                                                | yes          | 4              | `2026-11-01T185701_model_run.json` |
+| R8  | 2026-11-01 | fallback, equal rounds (`rules-2027-v3.1-round-order.yaml`)                      | yes          | 4              | `2026-11-01T190313_model_run.json` |
+| R9  | 2026-11-01 | fallback, no gender (`rules-2027-v3.1.yaml`)                                     | yes          | 4, 5           | `2026-11-01T190556_model_run.json` |
+| R10 | 2026-11-01 | fallback, office's course set (`rules-2027-v3.1-fixed-set.yaml`)                 | yes          | 4              | `2026-11-01T190802_model_run.json` |
+| H1  | 2026-11-06 | **2026 holdout**, frozen (`rules-2027-v3.1.yaml`), cycle 2026                    | n/a          | -              | `2026-11-06T195230_model_run.json` |
+| R11 | 2026-11-06 | RQ2 objectives and RSD (`rules-2027-v3.1.yaml`), `rq2 --determinacy --orders 20` | yes          | -              | `2026-11-06T214224_rq2_run.json`   |
 
 H1 is the only run on 2026. An earlier attempt the same day stopped on a loader error before any feasibility check or solve, so no 2026 result was seen before H1 (`docs/encoding-decisions.md`, 2026-11-06). Lineage doesn't apply: no 2026 teacher is a known repeater.
 

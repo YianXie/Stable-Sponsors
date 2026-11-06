@@ -197,3 +197,27 @@ Prepared before the single 2026 holdout run with `config/rules-2027-v3.1.yaml` (
 - **Where the gap is:** all 33 teachers the office placed and the model didn't are non-submitters. 18 of the 20 courses only the office ran were ranked by nobody. 9 office courses had 3 sponsors, against the drafted 2–2.
 - **Reading:** the holdout criterion in report §10 isn't met, but the test is weak, because the missing repeater status and unconfirmed capacities explain most of the gap. The 2026 holdout is now spent. Any later 2026 run, including one with repeaters from the office, is exploratory.
 - **Known wart:** `review` still prints "repeaters pinned by model: 0 of 0 (the rest have a discontinued prior course)" for 2026. The `repeater status unknown: 141` line under it is the correct reading.
+
+**RQ2 objectives, 2026-11-06**
+
+Modelling assumptions in `objectives.py`, `serial.py` and `metrics.py`, for Ian to confirm:
+
+- **Score.** A placement scores rule 1's weight for the best rank the teacher gave that course plus rule 6's bonus for the best round they ranked it in, each best taken separately over rounds. An unranked or unplaced teacher scores 0. This is the same sum encoders 1 and 6 add (`preference_scores` reuses `review.claim_scores`).
+- **Leximin is over the preference score, not the raw rank.** Its stages count, for each score level from 0 up, how many teachers score above it, maximised in order and then the utilitarian score. The population is `leximin_population`: the submitters, minus repeaters pinned to an incumbent course by rule 0, unless rule 0 is excluded. `worst_score` and `at_worst` use the same population.
+- **Coverage and Round-2 are broken by the utilitarian score.** Each stage is pinned at its optimum before the next one is maximised, and the last stage is always the utilitarian score. Coverage maximises the courses running, with a course counted only if it has at least one sponsor. Round-2 maximises the teachers placed in a course they ranked in `intl_r1` or `sg`, so the fewest wait for Round 2.
+- **Serial dictatorship is feasibility-preserving.** In turn, each submitter takes their best-scoring ranked course (ties by course ID) that still leaves the hard rules satisfiable, or else stays unplaced if that is satisfiable, or else is left free. Orders are shuffles of the sorted submitter IDs from one `random.Random(seed)`. A last solve places non-submitters and free teachers in the seats left, at score 0 and at no cost.
+- **Rule 11 is ignored.** The objectives have no secondary term, so an unranked placement costs nothing beyond scoring 0.
+
+Pairs where `compare.claim_scores` and `objectives.preference_scores` differ on 2027 with `rules-2027-v3.1.yaml`: 0. So `compare.envy`'s definition (best of bonus plus weight per row) makes no difference on these data, and `compare` is unchanged.
+
+Regression: `rq2 --objectives utilitarian --orders 1 --determinacy` (`2026-11-06T214111_rq2_run.json`) gives utilitarian score 2406, 76 determined and 36 determined and match, the same as R4.
+
+`--orders 20`: one serial order took about 3 s (`2026-11-06T214208_rq2_run.json`), under the plan's 90 s threshold for 20.
+
+Run, logged in report §5.4 as R11: `rq2 --determinacy --orders 20 --seed 0` (the default seed), cycle 2027, `rules-2027-v3.1.yaml`, no rules excluded, lineage on, commit `19a23ad`, clean tree, about 331 s. Report file `2026-11-06T214224_rq2_run.json`. All four objectives were proven optimal.
+
+Prediction outcomes:
+
+- 1 held: utilitarian agrees with the office on 53 placements (unplaced in both counts as agreeing), against leximin 48, coverage 50, Round-2 50 and RSD's mean 50.0 (41 to 58 over the orders). The regression run of the same objective gave 52, with the same score and the same 36 determined and match: the solver can return a different one of the tied optima.
+- 2 held: leximin's `worst_score` is 6, utilitarian's 5. Leximin's score is 2386, 20 (0.8%) below utilitarian's 2406.
+- 3 failed: coverage and utilitarian both run 68 courses.

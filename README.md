@@ -42,6 +42,7 @@ Run in this order. The scripts read `config/pseudonymize.yaml` by default; most 
 | 4    | `uv run python -m stable_sponsors.params --cycle 2027`                                | Drafts `params/course_params.csv` and `params/teacher_params.csv` from input tables only (never from placements). Edit them by hand as the office confirms values.                                                                                                                                                                                                   |
 | 5    | `uv run python -m stable_sponsors.model --cycle 2027 --optimize`                      | Checks the hard rules are feasible, solves, checks determinacy, and writes `runs/*_model_run.json`. `--exclude 10` drops a rule; `--no-lineage` matches repeaters' prior course by code.                                                                                                                                                                             |
 | 6    | `uv run python -m stable_sponsors.review`                                             | Compares the latest run with the office's placements: which teachers are determined, and which match. `--list` adds `T###` IDs.                                                                                                                                                                                                                                      |
+| 7    | `uv run python -m stable_sponsors.rq2 --determinacy`                                  | Allocates the cycle under the four objectives (utilitarian, leximin, coverage, Round-2) and by random serial dictatorship (`--orders`, default 20), compares each with the office in one table of counts (plus a rank histogram), and writes `runs/<when>_rq2_run.json`. `--determinacy` adds determined and determined-and-match counts.                            |
 
 Diagnostics:
 
@@ -72,6 +73,10 @@ src/stable_sponsors/
   params.py          draft course/teacher parameter CSVs
   model.py           build and solve the model, write run reports
   review.py          score a run against the office's placements
+  objectives.py      RQ2 objectives (utilitarian, leximin, coverage, Round-2), solved in stages
+  serial.py          random serial dictatorship baseline
+  metrics.py         metrics of one allocation, and agreement between two
+  rq2.py             compare the objectives and serial dictatorship with the office
   compare.py         rule violations in the observed placements
   interview_checks.py
   course_set_check.py
