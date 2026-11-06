@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from statistics import fmean
 
 from stable_sponsors.data import ROUNDS, Cycle, Preference
+from stable_sponsors.objectives import RANK_RULE, ROUND_RULE
 from stable_sponsors.review import Assignment
 from stable_sponsors.serial import submitters
 
@@ -22,14 +23,28 @@ def _courses_run(assignment: Assignment) -> set[str]:
     return {cid for cid in assignment.values() if cid is not None}
 
 
-def _label(rows: list[Preference]) -> str:
+def _label(rows: list[Preference], rules: list[dict] | None) -> str:
     """rank_hist label of a placed, ranked pair, from its best preference row.
 
-    The best row is the one with the highest bonus + weight. Rows are compared by round (order of
-    ROUNDS) and then rank, which picks that row whenever each round's bonus beats the next round's
-    by more than the weight range, as in rules-2027 and v3.1 (20/10/0 against weights 7..1).
+    The best row is the one with the highest bonus + weight (rules 1 and 6), ties going to the
+    earlier round in ROUNDS. Without `rules`, rows are compared by round and then rank, which picks
+    the same row only when each round's bonus beats the next round's by more than the weight range
+    (true of rules-2027 and v3.1, 20/10/0 against weights 7..1; not of the round-order variants).
     """
-    best = min(rows, key=lambda p: (ROUNDS.index(p.round_id), p.rank))
+    if rules is None:
+        best = min(rows, key=lambda p: (ROUNDS.index(p.round_id), p.rank))
+    else:
+        weights = next(r["params"] for r in rules if r["id"] == RANK_RULE)["weights"]
+        bonus = next(r["params"] for r in rules if r["id"] == ROUND_RULE)["bonus"]
+
+        def key(p: Preference) -> tuple[int, int, int]:
+            return (
+                -(bonus[p.round_id] + weights[p.rank - 1]),
+                ROUNDS.index(p.round_id),
+                p.rank,
+            )
+
+        best = min(rows, key=key)
     return f"{best.round_id}:{best.rank}"
 
 
@@ -38,10 +53,13 @@ def allocation_metrics(
     assignment: Assignment,
     scores: dict[tuple[str, str], int],
     population: list[str],
+    *,
+    rules: list[dict] | None = None,
 ) -> dict:
     """Score, coverage, worst-off and rank metrics of `assignment`.
 
     `scores` is objectives.preference_scores and `population` objectives.leximin_population.
+    `rules` (the rules `scores` came from) labels rank_hist by each pair's best row; pass it.
     A teacher missing from `assignment` counts as unplaced; unplaced or unranked scores 0.
     """
     rows: dict[tuple[str, str], list[Preference]] = defaultdict(list)
@@ -63,7 +81,7 @@ def allocation_metrics(
         if cid is None:
             hist["unplaced"] += 1
         elif (tid, cid) in rows:
-            hist[_label(rows[(tid, cid)])] += 1
+            hist[_label(rows[(tid, cid)], rules)] += 1
             round1 += any(p.round_id in ROUND_1 for p in rows[(tid, cid)])
         else:
             hist["unranked"] += 1

@@ -1,3 +1,5 @@
+import copy
+
 from stable_sponsors.metrics import agreement, allocation_metrics, summarise
 from stable_sponsors.model import load_rules
 from stable_sponsors.objectives import leximin_population, preference_scores
@@ -7,11 +9,23 @@ from tests.conftest import RULES_PATH
 RULES = load_rules(RULES_PATH)
 
 
-def _m(assignment, c=None):
+def _m(assignment, c=None, rules=RULES):
     c = c or lex_cycle()
     return allocation_metrics(
-        c, assignment, preference_scores(c, RULES), leximin_population(c)
+        c,
+        assignment,
+        preference_scores(c, rules),
+        leximin_population(c),
+        rules=rules,
     )
+
+
+def _equal_round_bonus(rules):
+    """rules with intl_r1 = intl_r2 = 10, as in rules-2027-v3.1-round-order.yaml."""
+    out = copy.deepcopy(rules)
+    rule6 = next(r for r in out if r["id"] == 6)
+    rule6["params"]["bonus"].update(intl_r1=10, intl_r2=10)
+    return out
 
 
 def test_metrics_of_the_utilitarian_lex_allocation():
@@ -58,6 +72,26 @@ def test_course_ranked_in_two_rounds_is_labelled_by_its_best_row():
     m = _m({"T1": "X", "T2": "S"}, c)
     assert m["rank_hist"] == {"intl_r1:5": 1, "sg:1": 1}
     assert (m["courses_run_intl"], m["courses_run_sg"]) == (1, 1)
+
+
+def test_equal_round_bonus_labels_by_bonus_plus_weight():
+    # intl_r1 rank 5 = 3 + 10 = 13 loses to intl_r2 rank 1 = 7 + 10 = 17
+    c = cycle(
+        [("T1", "X", 5, "intl_r1"), ("T1", "X", 1, "intl_r2")],
+        [course("X", 1, 1)],
+    )
+    m = _m({"T1": "X"}, c, rules=_equal_round_bonus(RULES))
+    assert m["rank_hist"] == {"intl_r2:1": 1}
+
+
+def test_equal_row_value_goes_to_the_earlier_round():
+    # intl_r1 rank 2 = 6 + 10 = 16 ties intl_r2 rank 2 = 16: intl_r1 comes first in ROUNDS
+    c = cycle(
+        [("T1", "X", 2, "intl_r2"), ("T1", "X", 2, "intl_r1")],
+        [course("X", 1, 1)],
+    )
+    m = _m({"T1": "X"}, c, rules=_equal_round_bonus(RULES))
+    assert m["rank_hist"] == {"intl_r1:2": 1}
 
 
 def test_agreement_counts_both_unplaced_as_same():
