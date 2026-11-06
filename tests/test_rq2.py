@@ -50,6 +50,26 @@ def test_determinacy_flag_adds_review(tmp_path):
     assert "determined_match" in u["review"] and len(u["determinacy"]) == 5
 
 
+def test_review_ignores_office_unplaced_teachers(tmp_path):
+    # Drop the office's SING-1 row, so T1002 is unplaced by the office.
+    cfg = make_private_root(tmp_path)
+    placements = tmp_path / "private" / "derived" / "2027" / "placements.csv"
+    lines = placements.read_text().splitlines(keepends=True)
+    placements.write_text("".join(ln for ln in lines if "SING-1" not in ln))
+    main(
+        ["--config", str(cfg), "--rules", str(RULES_PATH), "--orders", "1"]
+        + ["--time-limit", "10", "--determinacy"]
+    )
+    rep = json.loads(
+        next((tmp_path / "private" / "runs").glob("*_rq2_run.json")).read_text()
+    )
+    office = rep["office"]["metrics"]
+    assert office["placed"] == 4 and office["courses_run"] == 2
+    for entry in rep["objectives"].values():
+        assert entry["review"]["office_courses_run"] == office["courses_run"]
+        assert entry["review"]["office_placed"] == 4
+
+
 def test_console_has_no_teacher_ids(tmp_path, capsys):
     _run(tmp_path, "--determinacy")
     assert not re.search(r"\bT\d{3,4}\b", capsys.readouterr().out)

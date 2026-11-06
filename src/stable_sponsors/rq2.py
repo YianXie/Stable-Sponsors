@@ -161,7 +161,9 @@ def run_rq2(
                 who = set(submitters(cycle))
                 contested = {t for t, d in det.items() if not d and t in who}
                 entry["determinacy"] = det
-                entry["review"] = score(result.assignment, det, office, contested)
+                # score() wants the office's placements only: a None would count as a course.
+                placed = {t: c for t, c in office.items() if c is not None}
+                entry["review"] = score(result.assignment, det, placed, contested)
         report["objectives"][name] = entry
 
     # The baseline: submitters pick one at a time, in n seeded random orders.
