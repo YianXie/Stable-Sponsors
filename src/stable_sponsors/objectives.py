@@ -69,14 +69,68 @@ def stages(
     scores: dict[tuple[str, str], int],
     population: list[str],
 ) -> list[cp_model.LinearExprT]:
-    """The expressions to maximise, in order, for objective `name`."""
+    """The expressions to maximise, in order, for objective `name`.
+
+    Every list ends with the utilitarian score. "coverage" also adds constraints to ctx.model.
+    """
     # weighted_sum stays a linear expression even when no one ranked anything
     utilitarian = cp_model.LinearExpr.weighted_sum(
         [ctx.x[k] for k in scores], list(scores.values())
     )
     if name == "utilitarian":
         return [utilitarian]
+    if name == "leximin":
+        return _leximin_stages(ctx, scores, population) + [utilitarian]
+    if name == "coverage":
+        return [_courses_running(ctx), utilitarian]
+    if name == "round2":
+        return [_placed_in_round_1(ctx), utilitarian]
     raise NotImplementedError(name)
+
+
+def _count(variables: list[cp_model.IntVar]) -> cp_model.LinearExprT:
+    """How many of `variables` are 1, as a linear expression even when the list is empty."""
+    return cp_model.LinearExpr.weighted_sum(variables, [1] * len(variables))
+
+
+def _leximin_stages(
+    ctx: Ctx, scores: dict[tuple[str, str], int], population: list[str]
+) -> list[cp_model.LinearExprT]:
+    """For each score level l, lowest first: how many population teachers score above l.
+
+    A teacher sits in at most one course, so maximising these counts in order first lifts as
+    many teachers as possible off 0, then off the next level, and so on: leximin. The largest
+    level is left out, since no one can score above it.
+    """
+    in_population = set(population)
+    pairs = {k: s for k, s in scores.items() if k[0] in in_population}
+    levels = sorted({0, *pairs.values()})[:-1]
+    return [_count([ctx.x[k] for k, s in pairs.items() if s > l]) for l in levels]
+
+
+def _courses_running(ctx: Ctx) -> cp_model.LinearExprT:
+    """Number of courses that run, where running needs at least one sponsor.
+
+    Without the link y[c] <= sum of x[., c], a course could count as running with no one in it
+    (e.g. when rule 9's sponsor minimum is excluded).
+    """
+    teachers = [t.teacher_id for t in ctx.cycle.teachers]
+    for cid, runs in ctx.y.items():
+        ctx.model.add(runs <= sum(ctx.x[(tid, cid)] for tid in teachers))
+    return _count(list(ctx.y.values()))
+
+
+def _placed_in_round_1(ctx: Ctx) -> cp_model.LinearExprT:
+    """Number of teachers placed in a course they ranked in intl_r1 or sg.
+
+    Everyone else would have to wait for Round 2, so maximising this minimises Round 2.
+    """
+    round_1 = {
+        (p.teacher_id, p.course_id)
+        for p in ctx.cycle.preferences
+        if p.round_id in ("intl_r1", "sg")
+    }
+    return _count([ctx.x[k] for k in sorted(round_1)])
 
 
 def _staged(
