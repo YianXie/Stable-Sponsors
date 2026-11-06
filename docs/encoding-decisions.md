@@ -120,12 +120,12 @@ Predictions, written before these runs:
 
 Runs, all `--optimize`, cycle 2027, lineage on, logged in report §5.4:
 
-| Run | Rules file | Excluded | Report file |
-| --- | --- | --- | --- |
-| R3′ | `rules-2027-v2.3.yaml` | – | `2026-11-01T181831_model_run.json` |
-| R4 | `rules-2027.yaml` | – | `2026-11-01T181836_model_run.json` |
-| R6 | `rules-2027-r6-round-order.yaml` | – | `2026-11-01T181940_model_run.json` |
-| R7 | `rules-2027.yaml` | 5 | `2026-11-01T182012_model_run.json` |
+| Run | Rules file                       | Excluded | Report file                        |
+| --- | -------------------------------- | -------- | ---------------------------------- |
+| R3′ | `rules-2027-v2.3.yaml`           | –        | `2026-11-01T181831_model_run.json` |
+| R4  | `rules-2027.yaml`                | –        | `2026-11-01T181836_model_run.json` |
+| R6  | `rules-2027-r6-round-order.yaml` | –        | `2026-11-01T181940_model_run.json` |
+| R7  | `rules-2027.yaml`                | 5        | `2026-11-01T182012_model_run.json` |
 
 Prediction outcomes: P2 held (2224, 81 / 46 / 11). P3 failed: R4 runs 68, the same as R1, not fewer. P4 held (2406). P5 held (36). P6 held. P7 failed: R6 has 16 contested submitters against R4's 51, so equal bonuses removed ties rather than adding them. P8 held (2437, 68 courses).
 
@@ -172,3 +172,28 @@ Reading: a last-resort fallback doesn't reproduce the 12, and R4 stays the prima
 - **"In some optimal solution" was the wrong measure.** It counted the fallback penalty as a cost, so with 0 fallbacks its answer was forced. `placement_costs` measures the preference score lost instead. All 12 still cost something: R5 6 to 30, R8 6 to 20, R9 5 to 27, R10 1 to 28, with six of R10's at 4 or fewer. Those are near misses that small weight changes could erase, not rejections.
 - **Overlap of R10's 3 with the office's was one solution's result.** Which teachers and courses carry the 3 varies across optima. `review` now labels those lines, and the report drops them.
 - Rule 11 tests last-resort fallbacks, not the switching the interview described.
+
+**RQ2 predictions, 2026-11-03**
+
+1. Utilitarian agrees with the office on more placements than any other objective and RSD's mean.
+2. Leximin's `worst_score` is higher than utilitarian's.
+3. Coverage runs more courses than utilitarian's 68.
+
+**2026 holdout inputs, 2026-11-06**
+
+Prepared before the single 2026 holdout run with `config/rules-2027-v3.1.yaml` (no rules excluded, as frozen in report §10). Nothing here was fitted to 2026 placements.
+
+- **Unknown flags load as unknown.** A blank `is_repeater`, `submitted_intl_r1`, `submitted_intl_r2`, `submitted_sg` or `ran` cell now loads as `None`, not as an error and not as `False`. Known values load as before. `validate_cycle` skips the submitted-vs-rankings check only for a flag that is unknown.
+- **2026 repeaters are unknown to the model, and stay unknown.** There was no 2026 repeat file. Repeaters appear only on the placement sheet, which is the outcome being predicted, so reading them from it would leak the answer. All 141 teachers have `is_repeater = None`. The rules treat unknown like "not a repeater": rule 0 pins nobody, rule 4's incumbent-course exception and rule 11's incumbent exemption never apply. This is a limit of the holdout, not a claim that 2026 had no repeaters. Office placements of real repeaters are likely to show up as mismatches, and `review` reports `repeater_status_unknown` so the count isn't read as "0 repeaters".
+- **No lineage file is needed without known repeaters.** `resolve_incumbency` skips a missing `course_lineage.csv` when no teacher is a known repeater. If the file exists it is still read and validated.
+- **No round 2 in 2026.** No teacher has `intl_r2` rankings, so rule 6's round-2 bonus never applies.
+- **One 2026 course has `ran` unknown** (trip code known, no placement row). Rule 10, the only rule that reads `ran`, is `contradicted` and inactive in v3.1. Scoring and the analysis CLIs treat it as not run.
+- **2026 params are `params.py` drafts,** the same state as 2027's (every row `assumed` or `inferred`, no `requires`, default capacity 2,2). 118 teachers are in both cycles. 13 of them have a gender inferred in 2027 but blank in 2026; it is not carried over, since nothing is imputed across cycles. Where both cycles know a gender they agree.
+
+**2026 holdout result, 2026-11-06**
+
+- **Run once:** H1, `2026-11-06T195230_model_run.json` and `_reproduction.json`. An earlier attempt that day stopped on a `TypeError` in `run_model` (it summed `is_repeater` with `None`s in it) before any feasibility check or solve, and wrote nothing. That was fixed and tested on the toy cycle before H1, so no 2026 result was seen beforehand.
+- **Result:** 13 / 141 determined and match (13 / 50 of determined), against R4's 36 / 138 (36 / 76). 37 determined mismatches against R4's 40. Contested: 33 submitters, 58 non-submitters. Full table in report §6.6.
+- **Where the gap is:** all 33 teachers the office placed and the model didn't are non-submitters. 18 of the 20 courses only the office ran were ranked by nobody. 9 office courses had 3 sponsors, against the drafted 2–2.
+- **Reading:** the holdout criterion in report §10 isn't met, but the test is weak, because the missing repeater status and unconfirmed capacities explain most of the gap. The 2026 holdout is now spent. Any later 2026 run, including one with repeaters from the office, is exploratory.
+- **Known wart:** `review` still prints "repeaters pinned by model: 0 of 0 (the rest have a discontinued prior course)" for 2026. The `repeater status unknown: 141` line under it is the correct reading.

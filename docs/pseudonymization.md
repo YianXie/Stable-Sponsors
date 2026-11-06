@@ -109,7 +109,7 @@ Flags that need a decision:
 | NEAR_MISS            | left alone, but a candidate was refused; check it is really a separate person                                                                                                                                 |
 | PLACED_NO_EMAIL      | placed in 2027 but no 2027 form links to them                                                                                                                                                                 |
 | NO_NAME              | submitted a form but never linked to a placement                                                                                                                                                              |
-| OTHER_CYCLE_ID       | another cycle's accepted key gives one of these identifiers a different ID; decide which is right in both cycles                                                                                             |
+| OTHER_CYCLE_ID       | another cycle's accepted key gives one of these identifiers a different ID; decide which is right in both cycles                                                                                              |
 | TWO_SLOTS_SAME_CYCLE | one name fills two sponsor slots in one cycle                                                                                                                                                                 |
 | PLACED_OFF_LIST      | placed on a course that is on none of their own lists: check the link first (an unplaced `qzhou@` linked to a different, unresponsive Q. Zhou looks exactly like this); if it is right, it is a residual case |
 
