@@ -376,8 +376,9 @@ def review_run(config: dict, run_path: Path) -> ReviewResult:
     pinned = pinned_repeaters(cycle.teachers, run["excluded"])
     assignment = run[OPTIMAL_KEY]["assignment"]
     off_pin = sorted(t for t, cid in pinned.items() if assignment.get(t) != cid)
-    s["repeaters"] = sum(t.is_repeater for t in cycle.teachers)
+    s["repeaters"] = sum(t.is_repeater is True for t in cycle.teachers)
     s["repeaters_pinned"] = len(pinned)
+    s["repeater_status_unknown"] = sum(t.is_repeater is None for t in cycle.teachers)
     scores = claim_scores(
         cycle.preferences, load_rules(Path(run["rules_file"])), run["excluded"]
     )
@@ -467,6 +468,10 @@ def main(argv: list[str] | None = None) -> None:
     print(
         f"repeaters pinned by model: {s['repeaters_pinned']} of {s['repeaters']} ({pin_note})"
     )
+    if s.get("repeater_status_unknown"):
+        print(
+            f"repeater status unknown (no repeat file): {s['repeater_status_unknown']} teachers, never pinned"
+        )
     if r.pin_warning:
         print(f"WARNING: {r.pin_warning}")
     if r.not_in_run_warning:

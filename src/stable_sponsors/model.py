@@ -292,7 +292,9 @@ def run_model(
     cycle = load_cycle_from_config(config, cycle_no, use_lineage=lineage)
     if not lineage:
         log("note: lineage fix disabled: prior courses matched by code")
-    gone = sum(t.is_repeater and t.incumbent_course_id is None for t in cycle.teachers)
+    gone = sum(
+        t.is_repeater is True and t.incumbent_course_id is None for t in cycle.teachers
+    )
     if gone:
         log(
             f"note: {gone} repeater(s) whose prior course was discontinued: no incumbency applied"

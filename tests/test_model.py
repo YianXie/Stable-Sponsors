@@ -307,3 +307,18 @@ def test_run_model_silent_log_prints_nothing(tmp_path, capsys):
     cfg = load_config(make_private_root(tmp_path))
     model.run_model(cfg, 2027, RULES_PATH, optimize=True, log=lambda _: None)
     assert capsys.readouterr().out == ""
+
+
+def test_cli_and_review_run_with_unknown_repeaters(tmp_path):
+    """The 2026 holdout path: repeater status unknown for all, no lineage file."""
+    from stable_sponsors import review
+    from tests.test_data import _toy_with_unknowns
+
+    cfg = make_private_root(tmp_path, lineage=False)
+    _toy_with_unknowns(tmp_path / "private" / "derived" / "2027")
+    report = _run_report(tmp_path, "--optimize")
+    assert report["feasibility_result"]["status"] == "feasible"
+    review.main(["--config", str(cfg)])
+    (out,) = (tmp_path / "private" / "runs").glob("*_reproduction.json")
+    s = json.loads(out.read_text())
+    assert (s["repeaters"], s["repeater_status_unknown"]) == (0, 5)

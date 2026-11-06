@@ -156,6 +156,7 @@ def test_reproduction_reads_the_run_model_writes(tmp_path):
     assert s["teachers"] == 5
     assert s["repeaters"] == 2
     assert s["repeaters_pinned"] == 2
+    assert s["repeater_status_unknown"] == 0
     # repeaters are determined, and the model places them where the office did
     assert {"T1000", "T1004"} <= set(s["cells"]["determined_match"])
     cats = s["determined_mismatch_categories"]
