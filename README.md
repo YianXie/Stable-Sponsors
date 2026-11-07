@@ -16,7 +16,7 @@ The project has three steps:
 
 The office's spreadsheets contain real names and emails. None of that data is in this repository.
 
-- Real data lives outside the repo, under `private_root` (default `~/interim-private`): `raw/` (office spreadsheets), `key/` (identity crosswalk), `derived/` (pseudonymous CSVs), `freetext/`, `params/` and `runs/`.
+- Real data lives outside the repo, under `private_root` (default `~/interim-private`): `raw/` (office spreadsheets), `key/<cycle>/` (identity crosswalk), `derived/<cycle>/` (pseudonymous CSVs), `freetext/<cycle>/`, `params/` and `runs/`.
 - The scripts refuse any config whose paths resolve inside the repository.
 - Teachers appear only as `T###` IDs and courses as trip codes. Console output is limited to counts, row numbers, trip codes and `T###` IDs.
 - `config/pseudonymize.yaml` and the two source documents (the office's procedure document and interview notes) are gitignored.
@@ -34,15 +34,15 @@ cp config/pseudonymize.example.yaml config/pseudonymize.yaml   # then set privat
 
 Run in this order. The scripts read `config/pseudonymize.yaml` by default; most accept `--config` to use another file.
 
-| Step | Command                                                                  | What it does                                                                                                                                                                             |
-| ---- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | `uv run python -m stable_sponsors.pseudonymize.build_crosswalk`          | Stage 1: proposes the identity key and course mapping as `key/*_draft.csv` for human review.                                                                                             |
-| 2    | `uv run python -m stable_sponsors.pseudonymize.build_crosswalk --accept` | Promotes fully confirmed drafts to the final key. Confirmed rows are never renumbered or re-merged.                                                                                      |
-| 3    | `uv run python -m stable_sponsors.pseudonymize.apply_pseudonymization`   | Stage 2: applies the key and writes `derived/`.                                                                                                                                          |
-| 4    | `uv run pytest tests/pseudonymize/test_leakage.py`                       | Scans `derived/` for names or emails that leaked through.                                                                                                                                |
-| 5    | `uv run python -m stable_sponsors.params --cycle 2027`                   | Drafts `params/course_params.csv` and `params/teacher_params.csv` from input tables only (never from placements). Edit them by hand as the office confirms values.                       |
-| 6    | `uv run python -m stable_sponsors.model --cycle 2027 --optimize`         | Checks the hard rules are feasible, solves, checks determinacy, and writes `runs/*_model_run.json`. `--exclude 10` drops a rule; `--no-lineage` matches repeaters' prior course by code. |
-| 7    | `uv run python -m stable_sponsors.review`                                | Compares the latest run with the office's placements: which teachers are determined, and which match. `--list` adds `T###` IDs.                                                          |
+| Step | Command                                                                               | What it does                                                                                                                                                                                                                                                                                                                                                         |
+| ---- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `uv run python -m stable_sponsors.pseudonymize.pipeline`                              | For every cycle in the config: creates `key/<cycle>/`, `derived/<cycle>/` and `freetext/<cycle>/`, skips the cycle (with the reason) if its settings or raw files are not valid, runs stage 1 (drafts `key/<cycle>/*_draft.csv` for human review) and, once the cycle's key is accepted, stage 2 (writes `derived/<cycle>/`). `--cycle 2027` limits it to one cycle. |
+| 2    | `uv run python -m stable_sponsors.pseudonymize.build_crosswalk --cycle 2027 --accept` | Promotes a cycle's fully confirmed drafts to its final key, then rerun step 1. Confirmed rows are never renumbered or re-merged, and a teacher keeps one ID across cycles.                                                                                                                                                                                           |
+| 3    | `uv run pytest tests/pseudonymize/test_leakage.py`                                    | Scans every `derived/<cycle>/` for names or emails that leaked through.                                                                                                                                                                                                                                                                                              |
+| 4    | `uv run python -m stable_sponsors.params --cycle 2027`                                | Drafts `params/course_params.csv` and `params/teacher_params.csv` from input tables only (never from placements). Edit them by hand as the office confirms values.                                                                                                                                                                                                   |
+| 5    | `uv run python -m stable_sponsors.model --cycle 2027 --optimize`                      | Checks the hard rules are feasible, solves, checks determinacy, and writes `runs/*_model_run.json`. `--exclude 10` drops a rule; `--no-lineage` matches repeaters' prior course by code.                                                                                                                                                                             |
+| 6    | `uv run python -m stable_sponsors.review`                                             | Compares the latest run with the office's placements: which teachers are determined, and which match. `--list` adds `T###` IDs.                                                                                                                                                                                                                                      |
+| 7    | `uv run python -m stable_sponsors.rq2 --determinacy`                                  | Allocates the cycle under the four objectives (utilitarian, leximin, coverage, Round-2) and by random serial dictatorship (`--orders`, default 20), compares each with the office in one table of counts (plus a rank histogram), and writes `runs/<when>_rq2_run.json`. `--determinacy` adds determined and determined-and-match counts.                            |
 
 Diagnostics:
 
@@ -50,21 +50,38 @@ Diagnostics:
 - `uv run python -m stable_sponsors.interview_checks` counts how far the data agree with the 2026-10-28 office interview. The interview notes (`docs/interview-*.md`) are kept local and gitignored, like the other meeting notes.
 - `uv run python -m stable_sponsors.course_set_check --cycle 2027` tests whether the course set was fixed before sponsors were allocated (rule 10).
 
-See [`docs/pseudonymization.md`](docs/pseudonymization.md) for the full pipeline manual. Some script paths in it are out of date: the scripts now live under `src/stable_sponsors/pseudonymize/`.
+Stage 1 and stage 2 can also be run by hand (`build_crosswalk`, `apply_pseudonymization`, both with `--cycle`). See [`docs/pseudonymization.md`](docs/pseudonymization.md) for the full pipeline manual, including how IDs carry across cycles and how a pre-existing single-folder `key/`, `derived/` and `freetext/` is copied, never moved, into the per-cycle folders.
+
+## Web UI
+
+A local page that runs the model and shows the allocation next to the office's placements. Use two terminals from the repo root:
+
+```sh
+make api    # FastAPI on 127.0.0.1:8000
+make web    # Vite dev server for frontend/ (needs `npm install` in frontend/ once)
+```
+
+It is local only; it reads the private data through `config/pseudonymize.yaml`. Each click on "Generate allocation" takes about a minute and writes the usual run and reproduction files to `runs/`, so `review` treats a web run as the latest. The browser receives only `T###` IDs, trip codes, course type, country and review results.
 
 ## Repository layout
 
 ```text
 src/stable_sponsors/
-  pseudonymize/      raw spreadsheets -> pseudonymous CSVs (stages 1 and 2, leak check)
+  pseudonymize/      raw spreadsheets -> pseudonymous CSVs, per cycle (pipeline, stages 1 and 2, leak check)
   data.py            Teacher / Course / Preference / Cycle dataclasses, load_cycle()
   rules/             CP-SAT encoders: hard.py, priority.py, tiebreak.py, registry
   params.py          draft course/teacher parameter CSVs
   model.py           build and solve the model, write run reports
   review.py          score a run against the office's placements
+  objectives.py      RQ2 objectives (utilitarian, leximin, coverage, Round-2), solved in stages
+  serial.py          random serial dictatorship baseline
+  metrics.py         metrics of one allocation, and agreement between two
+  rq2.py             compare the objectives and serial dictatorship with the office
   compare.py         rule violations in the observed placements
   interview_checks.py
   course_set_check.py
+  api.py             local web API: POST /api/allocations (uses model.run_model and review.review_run)
+frontend/            Vite React TypeScript page for the web UI
 config/              rules-2027.yaml (rule spec), *.example.yaml templates
 docs/                procedure diff, encoding decisions, reports
 tests/               pytest suite; fixtures/toy_cycle is a small fake cycle

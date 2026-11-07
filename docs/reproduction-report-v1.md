@@ -2,13 +2,13 @@
 
 |                       |                                                                                  |
 | --------------------- | -------------------------------------------------------------------------------- |
-| **Report version**    | v3.1                                                                             |
-| **Date**              | 2026-11-01                                                                       |
+| **Report version**    | v3.2                                                                             |
+| **Date**              | 2026-11-06                                                                       |
 | **Author**            | Ian Xie                                                                          |
 | **Research question** | RQ1: Do the documented and assumed rules reproduce the office's real placements? |
-| **Code version**      | branch `week-5`, runs of 2026-11-01 (v2.3: commit `7dd2886`)                     |
+| **Code version**      | branch `week-5`, runs of 2026-11-01 (v2.3: commit `7dd2886`); holdout: `week-6`  |
 | **Rule spec**         | `config/rules-2027-v3.1.yaml` (v3.0, v2.3: same folder)                          |
-| **Cycle**             | 2027 Interim Semester                                                            |
+| **Cycle**             | 2027 Interim Semester; 2026 as a one-run holdout (§6.6)                          |
 
 ---
 
@@ -19,7 +19,8 @@
 - **Procedure formalized.** I wrote down my own understanding of the procedure, then classified every difference (diff categories A–E, §4). Each of the 11 rules now carries a class (hard / priority / tie-break) and a status (documented / assumed / deferred).
 - **Reproduction v1 (this report).** CP-SAT model of the rules, run on the real 2027 inputs and compared with the office's placements. Because no tie-break is documented, agreement is measured only over teachers whose placement is the same in every optimal solution ("determined", §5.3).
 - **Office interview (28 Oct, new in v3.0).** One conversation with the office (notes kept private, status `reported`), not yet confirmed by Ms. Natt. It contradicts a fixed course set (rule 10), gives the source for the gender rule, and offers switching as a possible explanation for placements into unranked courses. I checked these against the data before building on them. Of four planned changes, dropping rule 10 and the partial gender rule went in; fallback placements and the language rule were held back by their gates (§2.4). I then built fallback placements anyway, as an exploratory test (§6.3): as a last resort, they do not reproduce the office's unranked placements.
-- **Next.** Get answers from Ms. Natt (§9), run the 2026 holdout, then move to RQ2 (comparing utilitarian, leximin and coverage objectives).
+- **2026 holdout (new in v3.2, 6 Nov).** The frozen v3.1 rules, run once on 2026, reproduce 13 / 141 (9.2%) against 36 / 138 in 2027. 2026 has no repeat file, so the model knows of no repeaters, and most of the gap sits with teachers who never submitted (§6.6).
+- **Next.** Get answers from Ms. Natt (§9), then move to RQ2 (comparing utilitarian, leximin and coverage objectives).
 
 **What I'd like your advice on:** With many tied optima, is "determined and matches the office" a sound reproduction measure, or is there an established alternative (e.g. checking whether the office's allocation is optimal under some weighting)? v3.0 sharpens this: R6 pins down far more teachers than R4 but matches a smaller share of them (§6.5), so the measure moves with how many ties a weighting creates as well as with how right the rules are.
 
@@ -30,6 +31,8 @@
 Encoded 13 rules: 9 applied (6 hard, 3 priority, one of which has no effect unless rule 4 is off), 2 deferred, 1 contradicted, and a tie-break set to none. With the course set left free and rule 5 on (R4, the primary model) the model reproduces 36 / 138 (26.1%) of teachers exactly: 76 determined, 51 contested submitters, 11 contested non-submitters. R3 (v2.3) reproduces 48 / 138, but it fixes the course set to the office's and has no gender rule. Most of the fall from 48 to 36 is rule 5, not the course set: dropping rule 10 alone gives 46 (R7), and rule 5 takes that to 36, on genders known for only 52 / 138 teachers.
 
 The interview did not close the gap. "A course you ranked didn't run" can't explain most placements into unranked courses (4 / 12, no more than other submitters), and allowing fallback placements as a last resort doesn't reproduce them either: with the course set free the model uses none on today's data, and each of the office's 12 lowers the preference score (§6.3). Given the office's course set, half of them cost only 1 to 4 points, so that result is not firm. That course set needs 3 fallbacks, but only because the gender rule meets three repeater records already suspected wrong. No residual sits on a language course. The gender rule has 0 violations, a weak result on partial data. And "too few sponsors" doesn't obviously fit the unrun courses: every one had at least 1 ranker, though many rankings were low (Finding 3).
+
+On the 2026 holdout, run once with the rules frozen, the model reproduces 13 / 141 (9.2%; 13 / 50 = 26% of determined). That test is weakened by missing data: 2026 has no repeat file, so incumbency pins nobody, and all 33 teachers the office placed but the model left unplaced never submitted (§6.6).
 
 **Answer to RQ1 in one line:** No: among the placements the rules pin down, 47% match the office with the course set left free, the interview's explanations are not confirmed by the data, and a last-resort fallback does not reproduce the residuals.
 
@@ -212,19 +215,23 @@ Hard rules are constraints. Priority rules make up the objective.
 
 ### 5.4 Run log
 
-| Run | Date       | Variant                                                          | Lineage fix? | Rules excluded | Report file                        |
-| --- | ---------- | ---------------------------------------------------------------- | ------------ | -------------- | ---------------------------------- |
-| R1  | 2026-10-24 | unconstrained                                                    | no           | 10             | `2026-10-24T170917_model_run.json` |
-| R2  | 2026-10-24 | conditional                                                      | no           | —              | `2026-10-24T170757_model_run.json` |
-| R3  | 2026-10-24 | conditional                                                      | yes          | -              | `2026-10-24T170013_model_run.json` |
-| R3′ | 2026-11-01 | fixed set (`rules-2027-v2.3.yaml`)                               | yes          | -              | `2026-11-01T181831_model_run.json` |
-| R4  | 2026-11-01 | primary (`rules-2027.yaml`)                                      | yes          | -              | `2026-11-01T181836_model_run.json` |
-| R6  | 2026-11-01 | round order (`rules-2027-r6-round-order.yaml`)                   | yes          | -              | `2026-11-01T181940_model_run.json` |
-| R7  | 2026-11-01 | no gender (`rules-2027.yaml`)                                    | yes          | 5              | `2026-11-01T182012_model_run.json` |
-| R5  | 2026-11-01 | fallback (`rules-2027-v3.1.yaml`)                                | yes          | 4              | `2026-11-01T185701_model_run.json` |
-| R8  | 2026-11-01 | fallback, equal rounds (`rules-2027-v3.1-round-order.yaml`)      | yes          | 4              | `2026-11-01T190313_model_run.json` |
-| R9  | 2026-11-01 | fallback, no gender (`rules-2027-v3.1.yaml`)                     | yes          | 4, 5           | `2026-11-01T190556_model_run.json` |
-| R10 | 2026-11-01 | fallback, office's course set (`rules-2027-v3.1-fixed-set.yaml`) | yes          | 4              | `2026-11-01T190802_model_run.json` |
+| Run | Date       | Variant                                                                          | Lineage fix? | Rules excluded | Report file                        |
+| --- | ---------- | -------------------------------------------------------------------------------- | ------------ | -------------- | ---------------------------------- |
+| R1  | 2026-10-24 | unconstrained                                                                    | no           | 10             | `2026-10-24T170917_model_run.json` |
+| R2  | 2026-10-24 | conditional                                                                      | no           | —              | `2026-10-24T170757_model_run.json` |
+| R3  | 2026-10-24 | conditional                                                                      | yes          | -              | `2026-10-24T170013_model_run.json` |
+| R3′ | 2026-11-01 | fixed set (`rules-2027-v2.3.yaml`)                                               | yes          | -              | `2026-11-01T181831_model_run.json` |
+| R4  | 2026-11-01 | primary (`rules-2027.yaml`)                                                      | yes          | -              | `2026-11-01T181836_model_run.json` |
+| R6  | 2026-11-01 | round order (`rules-2027-r6-round-order.yaml`)                                   | yes          | -              | `2026-11-01T181940_model_run.json` |
+| R7  | 2026-11-01 | no gender (`rules-2027.yaml`)                                                    | yes          | 5              | `2026-11-01T182012_model_run.json` |
+| R5  | 2026-11-01 | fallback (`rules-2027-v3.1.yaml`)                                                | yes          | 4              | `2026-11-01T185701_model_run.json` |
+| R8  | 2026-11-01 | fallback, equal rounds (`rules-2027-v3.1-round-order.yaml`)                      | yes          | 4              | `2026-11-01T190313_model_run.json` |
+| R9  | 2026-11-01 | fallback, no gender (`rules-2027-v3.1.yaml`)                                     | yes          | 4, 5           | `2026-11-01T190556_model_run.json` |
+| R10 | 2026-11-01 | fallback, office's course set (`rules-2027-v3.1-fixed-set.yaml`)                 | yes          | 4              | `2026-11-01T190802_model_run.json` |
+| H1  | 2026-11-06 | **2026 holdout**, frozen (`rules-2027-v3.1.yaml`), cycle 2026                    | n/a          | -              | `2026-11-06T195230_model_run.json` |
+| R11 | 2026-11-06 | RQ2 objectives and RSD (`rules-2027-v3.1.yaml`), `rq2 --determinacy --orders 20` | yes          | -              | `2026-11-06T214224_rq2_run.json`   |
+
+H1 is the only run on 2026. An earlier attempt the same day stopped on a loader error before any feasibility check or solve, so no 2026 result was seen before H1 (`docs/encoding-decisions.md`, 2026-11-06). Lineage doesn't apply: no 2026 teacher is a known repeater.
 
 R3′ and R4 were also re-run after rule 11 was added, with the same results (`2026-11-01T185606`, `T185611`). R1 and R2 also replay through `rules-2027-v2.3.yaml` with the numbers in §6.1 (`2026-11-01T182328` and `T182338`), and R4 replays through `rules-2027-v3.0.yaml` (`T182342`).
 
@@ -366,6 +373,37 @@ R5, R8 and R9 give the same determined teachers and matches as R4, R6 and R7. R1
 
 **Caveat on the measure.** R3 and R3′ score above R4 for two separate reasons: they are told which courses ran (R7 → 46 without that), and they have no gender rule (R4 → 36 with it). And the share moves with the number of ties: R6 determines 35 more teachers than R4 and adds 8 matches, so its share of all teachers rises while its share of determined falls. Neither direction on its own shows a model is better. R3′ has eight unranked cases (2 + 6), the same number shown at the interview, so they are probably the same teachers. The other four of the 12 aren't determined mismatches in R3′.
 
+### 6.6 2026 holdout (H1)
+
+Run once, on 2026 inputs, with `rules-2027-v3.1.yaml` and nothing excluded: the configuration frozen in §10. The 2026 inputs differ from 2027's in ways that matter:
+
+- **No repeat file**, so repeater status is unknown for all 141 teachers. Repeaters appear only on the placement sheet, an outcome, so the model is not told who they are. Rule 0 pins nobody.
+- **No round 2.** Rankings are intl_r1 (521) and sg (75) only.
+- **Parameters are untouched drafts** from `params.py`: 2–2 capacity everywhere, gender inferred for 57 / 141 (15 male, 42 female, 1 conflict). Nothing is carried over from 2027.
+
+| Metric                                           | H1 (2026)          | R4 (2027)        |
+| ------------------------------------------------ | ------------------ | ---------------- |
+| Teachers                                         | 141                | 138              |
+| Determined and match                             | 13 / 141 = 9.2%    | 36 / 138 = 26.1% |
+| Share of determined                              | 13 / 50 = 26.0%    | 36 / 76 = 47.4%  |
+| Determined mismatches                            | 37                 | 40               |
+| Contested submitters / non-submitters            | 33 / 58            | 51 / 11          |
+| Placed by office / model                         | 137 / 108          | 131 / 137        |
+| Courses run by office / model                    | 64 / 54            | 65 / 68          |
+| Courses run only by office / only by model       | 20 / 10            | 7 / 10           |
+| Office unranked placements the hard rules forbid | 17                 | 12               |
+| Repeaters pinned                                 | 0 (status unknown) | 25 of 28         |
+
+**Determined mismatches by category (37):** repeater not on old course 0 (none are known), unranked with own choices not run 9, unranked with own choices run 6, non-submitter ahead of submitter 11, unexplained tie 0, other 11. 35 are a different course; 2 are placed by the model and left unplaced by the office.
+
+**Where the gap is** (counts from `placements.csv`, used only for comparison):
+
+- **Non-submitters.** The office placed 58 teachers who submitted no preferences (2027: 34 non-submitters in all). The model places 25 of them. All 33 teachers the office placed and the model didn't are non-submitters.
+- **Courses nobody ranked.** 18 of the 20 courses only the office ran were ranked by no one. With no preferences and no incumbency, the model has no reason to run them. That fits repeaters staffing their old trip without submitting, as in 2027, but the repeat file that would show it doesn't exist.
+- **Three-sponsor courses.** 9 of the office's 64 running courses had 3 sponsors (27 placements). The 2026 drafts assume 2–2, as 2027's did before PHIL-4 was set to 3–3 from the observed placements.
+
+**Reading.** The rules don't hold up on 2026 by the reproduction measure: the share of determined teachers who match falls from 47% to 26%. Most of the fall traces to inputs 2026 lacks (repeater status) and to unconfirmed parameters (capacity), not clearly to the rules. The determined-mismatch count (37 vs 40) and its spread across categories are similar in both years, which is weak evidence that the rules' errors carry over rather than grow. Contested counts reflect one arbitrary optimal solution.
+
 ---
 
 ## 7. Findings
@@ -375,27 +413,29 @@ R5, R8 and R9 give the same determined teachers and matches as R4, R6 and R7. R1
 3. **Which courses run is not fixed in advance, according to the office, but the data don't clearly support the reason given.** The interview (M-011) says a course drops when too few sponsors sign up, so rule 10 is `contradicted`. If a ranking counts as a sign-up, that doesn't fit: every one of the 13 unrun courses had at least 1 ranker, 11 had at least 3, and the most had 15; the one course the office gave as an example of no sign-ups had 5 rankers, 2 of them unplaced. But a ranking may not be a sign-up: 45 of the 76 rankings are at rank 5 to 7 and only 6 at rank 1, and teachers usually arrive as agreed pairs. On the assumed scoring, 8 / 13 had enough teachers who preferred the course to their final placement, but that is course by course (exploratory, and most of those teachers were placed, so moving them would leave another course short). From unplaced teachers alone, 2 of the 3 courses with enough rankers stay staffable under 1M/1F; of those 4 rankers, 2 have a known gender and 1 course drops. So **gender explains at most part of this**. Two other readings stay open: some courses are off before sign-up, and courses are sized from enrolment at 20 students each, so their number may be set by enrolment. Status: inference, pending Ms. Natt.
 4. **Switching remains unconfirmed, and a last-resort fallback doesn't reproduce the unranked placements.** It's the only explanation the office offered, shortfalls were described as uncommon, and the example was hypothetical. A course they ranked not running can't explain most of the 12. Allowing fallbacks when they cost nothing leaves R4 unchanged on today's data, and each of the 12 lowers the preference score. That is firmer with the course set free than with the office's, where half are near misses. The infeasibility that prompted the test depends on three repeater records already suspected wrong (§6.3, §6.4). The interview's actual switching account, and whether these placements were discretion, are untested.
 5. **The language requirement doesn't directly explain any residual.** 0 are on a language immersion course. An indirect effect can't be ruled out without language data.
-6. **Rules changed after seeing outcomes:** rule 4 (n = 1), rule 9 (PHIL-4 has 3 sponsors), rule 10 (added, then dropped), rule 5 (applied after the interview). See 4.1.
+6. **The 2026 holdout doesn't confirm the rules, and can't fully test them.** H1 reproduces 13 / 141. Without repeater data and with assumed capacities, most of the gap is non-submitters the model has no reason to place (§6.6).
+7. **Rules changed after seeing outcomes:** rule 4 (n = 1), rule 9 (PHIL-4 has 3 sponsors), rule 10 (added, then dropped), rule 5 (applied after the interview). See 4.1.
 
 ---
 
 ## 8. Threats to validity
 
-| Threat                                                                                   | Effect                                                                                                                | Mitigation / status                                            |
-| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Rule 10 uses an outcome as input (R3, R3′)                                               | Inflates agreement on course set and placed count                                                                     | Primary model no longer uses it. R3′ kept for replay.          |
-| No limit on the number of courses in R4, R6, R7                                          | Model may run courses the office could not                                                                            | Ask the office (§9 Q11). Not encoded yet                       |
-| Interview is a single unconfirmed conversation, from a transcript with no speaker labels | Rules 4–6, 9, 10 rest on `reported` statements, some agreed to rather than volunteered                                | Marked `reported`; Ms. Natt to confirm                         |
-| Gender inferred from form labels; 86 / 138 unknown                                       | Rule 5 is weak, and could lower the match on partial data                                                             | R7 shown alongside. Office's data requested                    |
-| Rule 11 built after its gate failed, and simpler than the process described              | Fallback results are exploratory, and a negative result is limited to last-resort fallbacks under the assumed weights | Disclosed in 4.1 and §6.3. R4 stays the primary model          |
-| Thresholds and P2–P16 written by the implementing assistant                              | Weaker than the author's own pre-registration                                                                         | Disclosed in §2.2 and §2.4. Margins on G1, G4 are wide         |
-| Rules tuned after seeing outcomes (4, 5, 9, 10)                                          | Overfitting to one cycle                                                                                              | Disclosed in 4.1. Test on 2026 once it's through the pipeline. |
-| Single cycle (2027 only)                                                                 | Can't separate stable rules from one-year quirks                                                                      | Add 2026 to `derived/`                                         |
-| Assumed weights (rule 1: 7..1, rule 6: 20/10/0)                                          | Envy results depend on them                                                                                           | R6 tests r1 vs r2 (little change); open item 2                 |
-| Rule 3 vacuous                                                                           | Real constraints may be missing, which would inflate residuals                                                        | Questions sent to office                                       |
-| Retrospective prior-course column                                                        | Incumbency residuals may be data errors                                                                               | 2026 audit pending                                             |
-| Crosswalk errors                                                                         | Mis-merged or split teachers create false residuals                                                                   | 1 suspected case unresolved                                    |
-| A third sponsor in placements.csv in `derived/` got dropped                              | The assumed 2-2 capacity is wrong                                                                                     | Regenerated `derived/`                                         |
+| Threat                                                                                   | Effect                                                                                                                | Mitigation / status                                        |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Rule 10 uses an outcome as input (R3, R3′)                                               | Inflates agreement on course set and placed count                                                                     | Primary model no longer uses it. R3′ kept for replay.      |
+| No limit on the number of courses in R4, R6, R7                                          | Model may run courses the office could not                                                                            | Ask the office (§9 Q11). Not encoded yet                   |
+| Interview is a single unconfirmed conversation, from a transcript with no speaker labels | Rules 4–6, 9, 10 rest on `reported` statements, some agreed to rather than volunteered                                | Marked `reported`; Ms. Natt to confirm                     |
+| Gender inferred from form labels; 86 / 138 unknown                                       | Rule 5 is weak, and could lower the match on partial data                                                             | R7 shown alongside. Office's data requested                |
+| Rule 11 built after its gate failed, and simpler than the process described              | Fallback results are exploratory, and a negative result is limited to last-resort fallbacks under the assumed weights | Disclosed in 4.1 and §6.3. R4 stays the primary model      |
+| Thresholds and P2–P16 written by the implementing assistant                              | Weaker than the author's own pre-registration                                                                         | Disclosed in §2.2 and §2.4. Margins on G1, G4 are wide     |
+| Rules tuned after seeing outcomes (4, 5, 9, 10)                                          | Overfitting to one cycle                                                                                              | Disclosed in 4.1. Tested once on 2026 (H1, §6.6): 13 / 141 |
+| Single cycle (2027 only)                                                                 | Can't separate stable rules from one-year quirks                                                                      | 2026 added as a holdout (H1); see next row                 |
+| 2026 holdout lacks repeater status and confirmed capacities                              | H1 can't tell rules that don't transfer from inputs 2026 doesn't have                                                 | Ask the office for 2026 repeaters and 3-sponsor courses    |
+| Assumed weights (rule 1: 7..1, rule 6: 20/10/0)                                          | Envy results depend on them                                                                                           | R6 tests r1 vs r2 (little change); open item 2             |
+| Rule 3 vacuous                                                                           | Real constraints may be missing, which would inflate residuals                                                        | Questions sent to office                                   |
+| Retrospective prior-course column                                                        | Incumbency residuals may be data errors                                                                               | 2026 audit pending                                         |
+| Crosswalk errors                                                                         | Mis-merged or split teachers create false residuals                                                                   | 1 suspected case unresolved                                |
+| A third sponsor in placements.csv in `derived/` got dropped                              | The assumed 2-2 capacity is wrong                                                                                     | Regenerated `derived/`                                     |
 
 ---
 
@@ -445,6 +485,8 @@ The encoded rules are not yet enough to reproduce the office's allocation, and t
 
 The rules are frozen as `config/rules-2027-v3.1.yaml`, which behaves like v3.0 with rule 4 on. They are a baseline for RQ2 once Ms. Natt has answered §9, the course-count question is settled, the determined-mismatch count falls below 20 (a working target set after seeing the 33; R4 is at 40), and the rules hold up on the 2026 holdout. Meeting these may not be possible from inputs alone, and if so that itself answers RQ1.
 
+The holdout criterion is not met: H1 reproduces 13 / 141 on 2026 (§6.6). Because 2026 has no repeat file and its capacities are unconfirmed, this is a weak test rather than a clear failure of the rules. A second 2026 run would no longer be a holdout. If the office supplies 2026 repeaters, any rerun should be reported as exploratory.
+
 ---
 
 ## Appendix A: Reproducing these results
@@ -464,6 +506,8 @@ uv run python -m stable_sponsors.model --optimize --rules config/rules-2027-v3.1
 uv run python -m stable_sponsors.model --optimize --rules config/rules-2027-v3.1-round-order.yaml --exclude 4  # R8
 uv run python -m stable_sponsors.model --optimize --rules config/rules-2027-v3.1.yaml --exclude 4 5      # R9
 uv run python -m stable_sponsors.model --optimize --rules config/rules-2027-v3.1-fixed-set.yaml --exclude 4    # R10
+uv run python -m stable_sponsors.params --cycle 2026                                                    # 2026 drafts, before H1
+uv run python -m stable_sponsors.model --optimize --cycle 2026 --rules config/rules-2027-v3.1.yaml       # H1, run once
 uv run python -m stable_sponsors.compare
 uv run python -m stable_sponsors.compare --rules config/rules-2027-r6-round-order.yaml                   # envy with R6's weights
 uv run python -m stable_sponsors.review --run <run json>

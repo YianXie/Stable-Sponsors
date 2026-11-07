@@ -14,7 +14,12 @@ from stable_sponsors.model import (
     load_cycle_from_config,
     load_rules,
 )
-from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
+from stable_sponsors.pseudonymize.idmap import (
+    DEFAULT_CONFIG,
+    for_cycle,
+    load_config,
+    out_path,
+)
 from stable_sponsors.rules.context import Ctx
 
 CYCLE = 2027
@@ -234,7 +239,7 @@ def main(argv: list[str] | None = None) -> None:
 
     config = load_config(args.config)
     rules = load_rules(args.rules)
-    derived = out_path(config, "derived")
+    derived = out_path(for_cycle(config, CYCLE), "derived")
     cycle = load_cycle_from_config(config, CYCLE)
     observed = load_observed_placements(derived / "placements.csv", cycle)
 

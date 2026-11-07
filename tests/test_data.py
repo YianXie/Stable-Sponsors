@@ -135,8 +135,8 @@ def test_lineage_off_unknown_code_means_no_incumbency(tmp_path):
 
 
 def test_observed_placements_keep_assigned_rows_of_this_cycle(tmp_path, toy_cycle):
-    """derived/placements.csv also holds empty sponsor slots (no teacher) and
-    other cycles' rows. Those are not placements in this cycle."""
+    """placements.csv also holds empty sponsor slots (no teacher), and a file may
+    hold other cycles' rows. Those are not placements in this cycle."""
     p = tmp_path / "placements.csv"
     p.write_text(
         (TOY_DIR / "placements.csv").read_text().rstrip("\n")
@@ -146,3 +146,67 @@ def test_observed_placements_keep_assigned_rows_of_this_cycle(tmp_path, toy_cycl
     )
     placements = load_observed_placements(p, toy_cycle)
     assert placements == load_observed_placements(TOY_DIR / "placements.csv", toy_cycle)
+
+
+# --- unknown is not "no" (2026: no repeat file, no round 2) ------------------
+
+
+def _toy_with_unknowns(tmp_path: Path) -> Path:
+    """The toy cycle with is_repeater, prior_course_id and submitted_intl_r2 blank
+    for everyone (as in 2026) and INTL-3's `ran` blank."""
+    for f in TOY_DIR.glob("*.csv"):
+        shutil.copy(f, tmp_path)
+    lines = (tmp_path / "teachers.csv").read_text().splitlines()
+    out = [lines[0]]
+    for line in lines[1:]:
+        cells = line.split(",")
+        cells[2] = cells[3] = cells[5] = " "
+        out.append(",".join(cells))
+    (tmp_path / "teachers.csv").write_text("\n".join(out) + "\n")
+    courses = (tmp_path / "courses.csv").read_text()
+    (tmp_path / "courses.csv").write_text(
+        courses.replace(
+            "INTL-3   , intl       , True        , False,",
+            "INTL-3   , intl       , True        ,      ,",
+        )
+    )
+    return tmp_path
+
+
+def test_blank_flags_load_as_unknown(tmp_path):
+    cyc = load_cycle(_toy_with_unknowns(tmp_path))
+    assert {t.is_repeater for t in cyc.teachers} == {None}
+    assert {t.submitted_intl_r2 for t in cyc.teachers} == {None}
+    assert all(t.incumbent_course_id is None for t in cyc.teachers)
+    assert {c.course_id: c.ran for c in cyc.courses}["INTL-3"] is None
+    # known flags are still read as before
+    assert {t.teacher_id: t.submitted_intl_r1 for t in cyc.teachers}["T1001"] is True
+
+
+def test_unknown_repeater_pins_nothing(tmp_path):
+    ctx = build_ctx(load_cycle(_toy_with_unknowns(tmp_path)))
+    incumbency_preassignment(ctx, {})
+    assert not any(n.startswith("x_") for n in _pinned(ctx))
+
+
+def test_unknown_round_flag_contradicted_by_rankings_is_still_checked(tmp_path):
+    """Unknown skips the submitted/rankings check only for that flag; a known
+    flag that disagrees with the rankings still raises."""
+    base = _toy_with_unknowns(tmp_path)
+    lines = (base / "teachers.csv").read_text().splitlines()
+    for i, line in enumerate(lines):
+        cells = line.split(",")
+        if cells[1].strip() == "T1001":
+            cells[4] = " False"  # T1001 ranked intl_r1
+            lines[i] = ",".join(cells)
+    (base / "teachers.csv").write_text("\n".join(lines) + "\n")
+    with pytest.raises(ValueError, match="submitted_intl_r1"):
+        load_cycle(base)
+
+
+def test_no_known_repeaters_needs_no_lineage_file(tmp_path):
+    """2026 has no repeat file, so no lineage file either: nothing to translate."""
+    base = _toy_with_unknowns(tmp_path)
+    (base / "course_lineage.csv").unlink()
+    cyc = load_cycle(base)
+    assert all(t.incumbent_course_id is None for t in cyc.teachers)

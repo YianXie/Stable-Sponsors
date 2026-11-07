@@ -17,7 +17,7 @@ from collections import defaultdict
 
 from stable_sponsors.interview_checks import ranking_genders, staffable
 from stable_sponsors.model import load_cycle_from_config
-from stable_sponsors.pseudonymize.idmap import load_config, out_path
+from stable_sponsors.pseudonymize.idmap import for_cycle, load_config, out_path
 from stable_sponsors.review import load_office
 
 DEFAULT_SPONSORS = 2  # M-008
@@ -66,7 +66,10 @@ def main(argv: list[str] | None = None) -> None:
 
     config = load_config(args.config)
     cycle = load_cycle_from_config(config, args.cycle)
-    office = load_office(out_path(config, "derived") / "placements.csv", args.cycle)
+    office = load_office(
+        out_path(for_cycle(config, args.cycle), "derived") / "placements.csv",
+        args.cycle,
+    )
 
     unplaced = {t.teacher_id for t in cycle.teachers} - set(office)
     unrun = {c.course_id for c in cycle.courses if not c.ran}

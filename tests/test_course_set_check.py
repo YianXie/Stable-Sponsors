@@ -42,7 +42,7 @@ def test_gender_staffable_needs_one_of_each_label():
 def _toy_with_unplaced_rankers(tmp_path):
     """T1001 and T1002 unplaced, both ranking INTL-3, which did not run."""
     cfg = make_private_root(tmp_path)
-    derived = tmp_path / "private" / "derived"
+    derived = tmp_path / "private" / "derived" / "2027"
     placements = pd.read_csv(derived / "placements.csv", skipinitialspace=True)
     placements.columns = placements.columns.str.strip()
     placements = placements[

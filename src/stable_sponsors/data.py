@@ -18,11 +18,11 @@ class Teacher:
     Attributes:
         cycle (int): The school year the teacher is selecting for.
         teacher_id (str): The unique identifier for the teacher.
-        is_repeater (bool): Indicates if the teacher is a repeater.
+        is_repeater (bool | None): Indicates if the teacher is a repeater; None when unknown (2026 has no repeat file).
         prior_course_id (str | None): The ID of the prior course, if any.
         incumbent_course_id (str | None): The ID of the incumbent course, if any.
         submitted_intl_r1 (bool): Indicates if the teacher submitted his/her preferences in the first international round.
-        submitted_intl_r2 (bool): Indicates if the teacher submitted his/her preferences in the second international round.
+        submitted_intl_r2 (bool | None): Indicates if the teacher submitted his/her preferences in the second international round; None when unknown (2026 had no round 2). Likewise for the other submitted_* flags.
         submitted_sg (bool): Indicates if the teacher submitted his/her preferences in the Singapore round.
         slot_genders_ranked (str | None): The slot genders the teacher ranked, joined by "|" (e.g. "female|male"), if any.
         qualifications (tuple[str, ...]): The qualifications of the teacher, if any.
@@ -32,12 +32,12 @@ class Teacher:
     # From teachers.csv
     cycle: int
     teacher_id: str
-    is_repeater: bool
+    is_repeater: bool | None
     prior_course_id: str | None
     incumbent_course_id: str | None
-    submitted_intl_r1: bool
-    submitted_intl_r2: bool
-    submitted_sg: bool
+    submitted_intl_r1: bool | None
+    submitted_intl_r2: bool | None
+    submitted_sg: bool | None
     slot_genders_ranked: str | None
 
     # From teacher_params.csv
@@ -54,7 +54,7 @@ class Course:
         course_id (str): The unique identifier for the course.
         course_type (CourseType): The type of the course ("intl" or "sg").
         in_offerings (bool): Indicates if the course is in the offering list.
-        ran (bool): Indicates if the course will be run.
+        ran (bool | None): Indicates if the course will be run; None when unknown (trip code known, no placement row).
         country (str | None): The host country where the course is offered, or none if the course is domestic in Singapore.
         requires (tuple[str, ...]): The qualifications required for the course.
         min_sponsors (int | None): The minimum number of sponsors required for the course, or none if unspecified.
@@ -68,7 +68,7 @@ class Course:
     course_id: str
     course_type: CourseType
     in_offerings: bool
-    ran: bool
+    ran: bool | None
     country: str | None
 
     # From course_params.csv
@@ -151,6 +151,11 @@ def _bool(v: Any) -> bool:
     if s in {"false", "0"}:
         return False
     raise ValueError(f"not a boolean: {v!r}")
+
+
+def _opt_bool(v: Any) -> bool | None:
+    """A boolean cell, or None if it is blank: unknown is not "no"."""
+    return None if pd.isna(v) or str(v).strip() == "" else _bool(v)
 
 
 def _opt(v: Any) -> str | None:
@@ -246,6 +251,9 @@ def resolve_incumbency(
             (None when their prior course was discontinued).
     """
 
+    if not path.exists() and not any(t.is_repeater for t in teachers):
+        # e.g. 2026: no repeat file, so no known repeaters and nothing to translate
+        return teachers
     lineage = read_lineage(path, {t.cycle for t in teachers})
     course_ids = {c.course_id for c in courses}
     unknown = sorted(
@@ -308,12 +316,12 @@ def load_teachers(path: Path) -> tuple[Teacher, ...]:
         Teacher(
             cycle=int(r["cycle"]),
             teacher_id=str(r["teacher_id"]),
-            is_repeater=_bool(r["is_repeater"]),
+            is_repeater=_opt_bool(r["is_repeater"]),
             prior_course_id=_opt(r["prior_course_id"]),
             incumbent_course_id=None,  # resolved later by resolve_incumbency
-            submitted_intl_r1=_bool(r["submitted_intl_r1"]),
-            submitted_intl_r2=_bool(r["submitted_intl_r2"]),
-            submitted_sg=_bool(r["submitted_sg"]),
+            submitted_intl_r1=_opt_bool(r["submitted_intl_r1"]),
+            submitted_intl_r2=_opt_bool(r["submitted_intl_r2"]),
+            submitted_sg=_opt_bool(r["submitted_sg"]),
             slot_genders_ranked=_opt(r["slot_genders_ranked"]),
         )
         for r in read_csv(path).to_dict("records")
@@ -336,7 +344,7 @@ def load_courses(path: Path) -> tuple[Course, ...]:
             course_id=str(r["course_id"]),
             course_type=r["course_type"],
             in_offerings=_bool(r["in_offerings"]),
-            ran=_bool(r["ran"]),
+            ran=_opt_bool(r["ran"]),
             country=_opt(r["country"]),
         )
         for r in read_csv(path).to_dict("records")
@@ -461,7 +469,7 @@ def load_observed_placements(path: Path, cycle: Cycle) -> tuple[ObservedPlacemen
     """Reads observed placement data from a CSV file and returns a tuple of ObservedPlacement objects.
 
     Only rows with status "assigned" in the cycle's year are placements: the file
-    also holds empty sponsor slots (no teacher) and, in derived/, every cycle.
+    also holds empty sponsor slots (no teacher), and a fixture may hold several cycles.
 
     Args:
         path (Path): The path to the CSV file containing observed placement data.
@@ -583,6 +591,8 @@ def validate_cycle(cycle: Cycle) -> None:
             ("intl_r2", teacher.submitted_intl_r2),
             ("sg", teacher.submitted_sg),
         ):
+            if submitted is None:  # unknown: nothing to check against
+                continue
             if submitted != (round_id in rounds_ranked[teacher.teacher_id]):
                 raise ValueError(
                     f"Teacher ID {teacher.teacher_id} submitted_{round_id} does not match the existence of {round_id} rankings."
@@ -608,7 +618,7 @@ def load_cycle(
     Args:
         base (Path): The base path to the directory containing the CSV files.
         params_dir (Path | None, optional): An optional path to the directory containing parameter CSV files. If not provided, it defaults to the base path.
-        cycle (int | None, optional): Keep only rows for this cycle. derived/ holds every cycle in the same files, so pass this for real data. None keeps all rows (fine for single-cycle fixtures).
+        cycle (int | None, optional): Keep only rows for this cycle. Pass this for real data: each derived/<cycle>/ folder holds one cycle, and the filter guards against reading the wrong one. None keeps all rows (fine for single-cycle fixtures).
         lineage_path (Path | None, optional): The prior-year -> this-year course lineage CSV. Defaults to params_dir / "course_lineage.csv".
         use_lineage (bool, optional): False disables the lineage fix: repeaters are matched to this year's courses by code (resolve_incumbency_by_code) and lineage_path is not read. Only for reproducing pre-fix runs. Defaults to True.
 

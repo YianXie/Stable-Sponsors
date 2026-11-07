@@ -1,18 +1,23 @@
 """Stage 2 of 2: apply the accepted key and write the analysis dataset.
 
-    uv run python -m stable_sponsors.pseudonymize.apply_pseudonymization --config config/pseudonymize.yaml
+    uv run python -m stable_sponsors.pseudonymize.apply_pseudonymization --cycle 2027
 
-Reads key/identity.csv, key/course_alias.csv and key/course_catalogue.csv
-(produced by build_crosswalk.py --accept) and refuses to write anything if a
-single email, name or course string in the raw files is not covered by them.
+Without --cycle, every cycle in the config is processed in turn. For each cycle,
+reads key/<cycle>/identity.csv, course_alias.csv and course_catalogue.csv
+(produced by build_crosswalk --accept) and refuses to write anything if a
+single email, name or course string in that cycle's raw files is not covered.
 
-Writes under private_root/derived/ (every table has a `cycle` column):
-    teachers.csv      one row per teacher per cycle they appear in
+Writes under private_root/derived/<cycle>/ (every table also has a `cycle` column):
+    teachers.csv      one row per teacher in the cycle
     preferences.csv   teacher, round, rank, course
     placements.csv    course, sponsor slot, teacher, status
     courses.csv       course, type, in offerings, ran, sponsors assigned, country
     checks.csv        data-consistency findings; each is a question for the office
     manifest.json     code commit, input/key/output hashes, counts
+
+A repeater's prior course is checked against the previous configured cycle's
+derived/<cycle>/placements.csv when that cycle has been built; teacher IDs are
+shared across cycles, so the two can be compared directly.
 
 Free text goes to private_root/freetext/<cycle>/ and never to derived/. The
 coding sheet there is merged, not overwritten, so hand-coded columns survive a
@@ -23,7 +28,6 @@ is_repeater in a cycle with no repeat file), never "no".
 from __future__ import annotations
 
 import argparse
-import itertools
 import json
 import platform
 import subprocess
@@ -40,6 +44,7 @@ from stable_sponsors.pseudonymize.build_crosswalk import (
     KEY_FILES,
     is_yes,
     node_key,
+    stamped_name,
 )
 from stable_sponsors.pseudonymize.idmap import (
     DEFAULT_CONFIG,
@@ -48,9 +53,11 @@ from stable_sponsors.pseudonymize.idmap import (
     course_key,
     load_config,
     out_path,
+    root_path,
     sha256_file,
     split_slot_tag,
 )
+from stable_sponsors.pseudonymize.layout import for_each_cycle
 from stable_sponsors.pseudonymize.sources import ROUNDS, load_all
 
 CODE_COLUMNS = [
@@ -136,6 +143,19 @@ def unaccepted_edits(cfg):
     return out
 
 
+def previous_placements(cfg):
+    """(previous cycle, its derived placements.csv or None if not built), or (None, None).
+
+    The previous cycle is the configured cycle just before this one.
+    """
+    keys = sorted(cfg["_all_cycles"])
+    i = keys.index(cfg["_cycle"]) if cfg["_cycle"] in keys else 0
+    if i == 0:
+        return None, None
+    p = root_path(cfg, f"derived/{keys[i - 1]}/placements.csv")
+    return keys[i - 1], (p if p.exists() else None)
+
+
 def git_state():
     try:
         commit = subprocess.check_output(
@@ -170,8 +190,7 @@ def run(cfg, quiet=False):
 
     missing = defaultdict(list)  # what -> row references (no personal data)
     teachers, prefs, places, courses, checks = [], [], [], [], []
-    freetext = []  # (cycle, tid, round, column, text)
-    placed_by_cycle = {}
+    freetext = []  # (tid, round, column, text)
 
     def check(cy, kind, tid="", cid="", detail=""):
         checks.append(
@@ -304,7 +323,7 @@ def run(cfg, quiet=False):
                     }
                 )
             for col, txt in r.freetext.items():
-                freetext.append((k, t, r.round, col, txt))
+                freetext.append((t, r.round, col, txt))
 
         # ---- placements
         placed = defaultdict(list)
@@ -329,7 +348,6 @@ def run(cfg, quiet=False):
                 }
             )
         placed = dict(placed)  # plain dict: lookups below must not insert
-        placed_by_cycle[k] = placed
 
         # ---- teachers in this cycle
         present = set(rep).union(placed, *submitted.values())
@@ -446,18 +464,22 @@ def run(cfg, quiet=False):
             )
 
     # ---- cross-cycle: a repeater's prior course should be last cycle's placement
-    keys = [cy.key for cy in cycles]
-    for prev, cur in itertools.pairwise(keys):
-        cur_rep = {
-            t["teacher_id"]: t["prior_course_id"]
-            for t in teachers
-            if t["cycle"] == cur and t["is_repeater"] is True
-        }
-        for t, prior in sorted(cur_rep.items()):
-            last = placed_by_cycle[prev].get(t, [])
+    prev, prev_path = previous_placements(cfg)
+    repeaters = {
+        t["teacher_id"]: t["prior_course_id"]
+        for t in teachers
+        if t["is_repeater"] is True
+    }
+    if prev_path is not None:
+        pl = pd.read_csv(prev_path, dtype=str).fillna("")
+        placed_prev = defaultdict(list)
+        for r in pl[pl["status"] == "assigned"].itertuples():
+            placed_prev[r.teacher_id].append(r.course_id)
+        for t, prior in sorted(repeaters.items()):
+            last = placed_prev.get(t, [])
             if not last:
                 check(
-                    cur,
+                    cfg["_cycle"],
                     "repeater_not_placed_previous_cycle",
                     t,
                     prior,
@@ -465,12 +487,17 @@ def run(cfg, quiet=False):
                 )
             elif prior and prior not in last:
                 check(
-                    cur,
+                    cfg["_cycle"],
                     "prior_course_differs_from_previous_placement",
                     t,
                     prior,
                     f"{prev} placement {'|'.join(last)}",
                 )
+    elif prev and repeaters and not quiet:
+        print(
+            f"  ! derived/{prev}/ is not built, so repeaters' prior courses are not "
+            f"checked against the {prev} placements"
+        )
 
     if missing:
         print("NOTHING WRITTEN. The key does not cover these raw values:")
@@ -560,6 +587,7 @@ def run(cfg, quiet=False):
             "rounds": cy.rounds,
         }
     manifest = {
+        "cycle": cfg["_cycle"],
         "built_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "git_commit": commit,
         "working_tree_dirty": dirty,
@@ -568,6 +596,10 @@ def run(cfg, quiet=False):
         "config_sha256": cfg["_config_sha256"],
         "inputs_sha256": {cy.key: cy.inputs for cy in cycles},
         "key_sha256": {rel: sha256_file(out_path(cfg, rel)) for _, rel in KEY_FILES},
+        "previous_cycle_placements": {
+            "cycle": prev,
+            "sha256": sha256_file(prev_path) if prev_path else None,
+        },
         "outputs_sha256": {
             f"{n}.csv": sha256_file(derived / f"{n}.csv") for n in tables
         },
@@ -594,13 +626,14 @@ def run(cfg, quiet=False):
             )
         if checks:
             print(
-                "\nchecks (details in derived/checks.csv; each is a question, not a bug):"
+                f"\nchecks (details in {derived / 'checks.csv'}; each is a question, "
+                "not a bug):"
             )
             for kind, n in Counter(
                 (c["cycle"], c["check"]) for c in checks
             ).most_common():
                 print(f"  {kind[0]}  {kind[1]:46s} {n:4d}")
-        print(f"\nfree-text fields routed to freetext/: {n_ft}")
+        print(f"\nfree-text fields routed to {out_path(cfg, 'freetext')}: {n_ft}")
         print(f"wrote {derived}  (commit {commit[:8]}, dirty={dirty})")
     return manifest
 
@@ -609,16 +642,14 @@ def write_freetext(cfg, items):
     base = out_path(cfg, "freetext")
     base.mkdir(parents=True, exist_ok=True)
     rows = []
-    for cyc, t, rnd, col, txt in items:
-        d = base / cyc
-        d.mkdir(parents=True, exist_ok=True)
+    for t, rnd, col, txt in items:
         slug = (
             "".join(ch if ch.isalnum() else "_" for ch in col).lower().strip("_")[:40]
         )
-        (d / f"{t}__{rnd}__{slug}.txt").write_text(txt)
+        (base / f"{t}__{rnd}__{slug}.txt").write_text(txt)
         rows.append(
             {
-                "cycle": cyc,
+                "cycle": cfg["_cycle"],
                 "teacher_id": t,
                 "round": rnd,
                 "field": col,
@@ -640,11 +671,13 @@ def write_freetext(cfg, items):
             )
         )
         if dropped:
+            # a dated copy, so an earlier copy is never overwritten
+            kept = base / stamped_name(sheet)
+            old.to_csv(kept, index=False)
             print(
-                f"  ! coding sheet: {dropped} previously coded rows no longer have free text "
-                "(kept in freetext/coding_sheet.previous.csv)"
+                f"  ! coding sheet: {dropped} previously coded rows no longer have free "
+                f"text (the old sheet is kept as {kept.name})"
             )
-            old.to_csv(base / "coding_sheet.previous.csv", index=False)
     for c in CODE_COLUMNS:
         if c not in new.columns:
             new[c] = ""
@@ -655,8 +688,13 @@ def write_freetext(cfg, items):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--config", default=DEFAULT_CONFIG)
+    ap.add_argument(
+        "--cycle",
+        action="append",
+        help="cycle to process (repeatable; default: every cycle in the config)",
+    )
     args = ap.parse_args()
-    run(load_config(args.config))
+    for_each_cycle(load_config(args.config), args.cycle, run)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ def make_private_root(tmp_path: Path, lineage: bool = True) -> Path:
 
     Args:
         tmp_path (Path): where to put private/ and the config.
-        lineage (bool, optional): copy key/course_lineage.csv. Defaults to True.
+        lineage (bool, optional): copy key/2027/course_lineage.csv. Defaults to True.
 
     Returns:
         Path: the config file pointing at it.
@@ -26,9 +26,9 @@ def make_private_root(tmp_path: Path, lineage: bool = True) -> Path:
 
     root = tmp_path / "private"
     for sub, names in {
-        "derived": ("teachers", "courses", "preferences", "placements"),
+        "derived/2027": ("teachers", "courses", "preferences", "placements"),
         "params": ("teacher_params", "course_params"),
-        "key": ("course_lineage",) if lineage else (),
+        "key/2027": ("course_lineage",) if lineage else (),
     }.items():
         (root / sub).mkdir(parents=True)
         for name in names:

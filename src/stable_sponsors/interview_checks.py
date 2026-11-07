@@ -23,7 +23,12 @@ from pathlib import Path
 from stable_sponsors.compare import ORIGINS, claim_scores, fallback_origin, violations
 from stable_sponsors.data import Cycle, load_observed_placements
 from stable_sponsors.model import load_cycle_from_config, load_rules, min_fallbacks
-from stable_sponsors.pseudonymize.idmap import DEFAULT_CONFIG, load_config, out_path
+from stable_sponsors.pseudonymize.idmap import (
+    DEFAULT_CONFIG,
+    for_cycle,
+    load_config,
+    out_path,
+)
 
 # The 2027 catalogue's language immersion courses. A country doesn't identify them: China has 8 courses.
 LANGUAGE_COURSES = "CHIN-1,FRAN-1,SPAI-1"
@@ -138,7 +143,7 @@ def main(argv: list[str] | None = None) -> None:
     config = load_config(args.config)
     cycle = load_cycle_from_config(config, args.cycle)
     observed = load_observed_placements(
-        out_path(config, "derived") / "placements.csv", cycle
+        out_path(for_cycle(config, args.cycle), "derived") / "placements.csv", cycle
     )
     placed = {p.teacher_id: p.course_id for p in observed}
     v = violations(cycle, observed)

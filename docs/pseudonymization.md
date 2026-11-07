@@ -3,23 +3,28 @@
 Turns the office's spreadsheets (2026 and 2027 cycles) into a pseudonymous
 dataset keyed by `T###` teacher IDs and trip codes. Two stages with a human
 review in between, because the identity join is a judgment call and a wrong
-link becomes a false RQ1 residual.
+link becomes a false RQ1 residual. Each cycle is processed on its own, in its
+own folders.
 
 ```bash
-pip install pandas openpyxl pyyaml pytest
-
+uv sync
 cp config/pseudonymize.example.yaml config/pseudonymize.yaml    # gitignored; set private_root
 
-python tools/make_synthetic.py --out ~/interim-synthetic          # optional dry run on fake data
-pytest -q                                                          # includes an end-to-end run on fake data
+uv run python tools/make_synthetic.py --out ~/interim-synthetic  # optional dry run on fake data
+uv run pytest -q                                                  # includes an end-to-end run on fake data
 
-python src/build_crosswalk.py                  # stage 1: writes three drafts under key/
-#   review key/identity_draft.csv, course_alias_draft.csv, course_catalogue_draft.csv
+uv run python -m stable_sponsors.pseudonymize.pipeline           # every cycle: folders, stage 1, stage 2 once accepted
+#   review key/<cycle>/identity_draft.csv, course_alias_draft.csv, course_catalogue_draft.csv
 #   fix what is wrong, set confirmed=y on every row
-python src/build_crosswalk.py --accept         # promotes drafts to key/*.csv
-python src/apply_pseudonymization.py           # stage 2: writes derived/
-pytest -q                                      # leakage tests now run against your derived/
+uv run python -m stable_sponsors.pseudonymize.build_crosswalk --cycle 2026 --accept
+uv run python -m stable_sponsors.pseudonymize.pipeline           # rebuilds 2027's drafts with 2026's IDs, writes derived/2026/
+#   review and accept 2027 the same way, then run the pipeline again
+uv run pytest -q                                                  # leakage tests now run against every derived/<cycle>/
 ```
+
+The two stages can also be run by hand: `build_crosswalk` (stage 1, `--accept`
+to promote the drafts) and `apply_pseudonymization` (stage 2). Both take
+`--cycle` (repeatable) and default to every cycle in the config.
 
 Console output from every script contains only counts, spreadsheet row numbers,
 trip codes and `T###` IDs, so it is safe to paste into a chat. The CSVs under
@@ -31,20 +36,64 @@ trip codes and `T###` IDs, so it is safe to paste into a chat. The CSVs under
 repo (public)              code, config/*.example.yaml, tests. No data.
 ~/interim-private/
     raw/2026/ raw/2027/    files as received from the office
-    key/                   identity.csv, course_alias.csv, course_catalogue.csv (+ drafts, backups)
-    derived/               teachers, preferences, placements, courses, checks, manifest.json
+    key/issued_ids.txt     every teacher ID ever handed out, shared by all cycles
+    key/<cycle>/           identity.csv, course_alias.csv, course_catalogue.csv,
+                           course_lineage.csv (+ drafts, draft_inputs.json, backup/)
+    derived/<cycle>/       teachers, preferences, placements, courses, checks, manifest.json
     freetext/<cycle>/      one file per teacher per free-text answer + coding_sheet.csv
+    params/ runs/          model inputs and run reports (see README)
 ```
 
 `private_root` and `raw_dir` are refused if they resolve inside the repo.
 
+## Cycles
+
+`pipeline` takes the cycles in the config oldest first. For each one it
+
+1. creates `key/<cycle>/`, `derived/<cycle>/` and `freetext/<cycle>/` if they are
+   missing (for every configured cycle, valid or not);
+2. checks the cycle's settings and raw files. A cycle with a missing setting, an
+   unknown round name or a missing file is skipped with the reason, and the
+   other cycles still run;
+3. runs stage 1, which rebuilds the drafts under `key/<cycle>/`;
+4. runs stage 2 if the cycle has an accepted, fully confirmed key; otherwise it
+   says what is missing (usually `--accept`).
+
+It never accepts drafts: that is the human step.
+
+**One teacher, one ID in every cycle.** When stage 1 builds a cycle, every other
+cycle's accepted `key/<cycle>/identity.csv` is read. An email or name found
+there is proposed with that ID, and identifiers that key puts under one ID are
+linked here too, as firmly as an email and name typed on the same form row. Only
+a row you confirmed or edited in this cycle can keep a different ID (flagged
+`OTHER_CYCLE_ID`). An unconfirmed ID from an earlier draft gives way, and is
+dropped if it belongs to someone else in that key, so unreviewed rows can change
+ID on a rebuild. New IDs come from the shared `key/issued_ids.txt`, so no ID is
+ever given to two people. So accept the older cycle first, then rebuild the
+newer one. Cycles are joined only through an identical email address or name; a
+person who appears under different identifiers in each cycle gets a new ID.
+Give them their other ID by typing it in `teacher_id`, with a note.
+
+**Repeaters.** Stage 2 compares a cycle's repeaters' prior course with the
+previous configured cycle's `derived/<cycle>/placements.csv`, if that cycle has
+been built. If not, it says so and skips those checks.
+
+**The old single-folder layout.** Before per-cycle folders, `key/`, `derived/`
+and `freetext/` held every cycle in one set of files. Those files are never
+deleted, moved or changed. The first time a cycle's folders are prepared and its
+key folder holds no key file, the rows of the old key and coding sheet that
+belong to that cycle are copied in (whole files are copied byte for byte), so its
+confirmed IDs and hand coding carry over. `key/issued_ids.txt` stays where it is.
+
 ## Reviewing the drafts
 
-Edit the `*_draft.csv` files, never `identity.csv` and friends: the drafts are
-what every rerun reads, and stage 2 warns if they hold edits you have not accepted.
+Edit the `key/<cycle>/*_draft.csv` files, never `identity.csv` and friends: the
+drafts are what every rerun reads, and stage 2 warns if they hold edits you have
+not accepted.
 
-**identity_draft.csv**: one row per email address or distinct name. Rows sharing a
-`teacher_id` are one person across both cycles. Sorted worst first.
+**identity_draft.csv**: one row per email address or distinct name in the cycle.
+Rows sharing a `teacher_id` are one person, in this cycle and in any other cycle's
+key. Sorted worst first.
 To split a wrong merge, set `teacher_id` to `NEW` (or `NEW1`, `NEW2`… for several
 different new people); a fresh unused ID is assigned. To merge, copy the other
 person's ID. Any row whose `teacher_id` differs from `proposed_id` needs a note
@@ -60,7 +109,7 @@ Flags that need a decision:
 | NEAR_MISS            | left alone, but a candidate was refused; check it is really a separate person                                                                                                                                 |
 | PLACED_NO_EMAIL      | placed in 2027 but no 2027 form links to them                                                                                                                                                                 |
 | NO_NAME              | submitted a form but never linked to a placement                                                                                                                                                              |
-| CROSS_CYCLE_LINK     | email seen only in one cycle, name only in the other                                                                                                                                                          |
+| OTHER_CYCLE_ID       | another cycle's accepted key gives one of these identifiers a different ID; decide which is right in both cycles                                                                                              |
 | TWO_SLOTS_SAME_CYCLE | one name fills two sponsor slots in one cycle                                                                                                                                                                 |
 | PLACED_OFF_LIST      | placed on a course that is on none of their own lists: check the link first (an unplaced `qzhou@` linked to a different, unresponsive Q. Zhou looks exactly like this); if it is right, it is a residual case |
 
@@ -121,16 +170,26 @@ placement sheet. Either way, rerun stage 1.
 - **Extra-sponsor rows.** A placement row with sponsors but no code or name
   (merged cells) belongs to the course above; so does a repeated trip code.
 - **Duplicate submissions** keep the last row by default (`duplicate_submissions`).
-- **Free text never reaches `derived/`.** Hand-code it in `freetext/coding_sheet.csv`;
-  rebuilds merge into that sheet instead of overwriting it.
-- **Checks are questions, not fixes.** `derived/checks.csv` lists things such as a
-  repeater placed on a different course, or a 2027 prior course that is not the
-  teacher's 2026 placement (often a renumbered trip code). Take them to the office.
+- **Free text never reaches `derived/`.** Hand-code it in
+  `freetext/<cycle>/coding_sheet.csv`; rebuilds merge into that sheet instead of
+  overwriting it. If a rebuild would drop coded rows, the old sheet is kept as a
+  dated copy next to it.
+- **Nothing is deleted or moved.** Before a key file is overwritten, a dated copy
+  goes to `key/<cycle>/backup/`. A key file in an older format is ignored, not
+  moved.
+- **Checks are questions, not fixes.** `derived/<cycle>/checks.csv` lists things such
+  as a repeater placed on a different course, or a 2027 prior course that is not
+  the teacher's 2026 placement (often a renumbered trip code). Take them to the office.
 
 ## Tests
 
-`tests/test_matching.py` covers the matching rules. `tests/test_pipeline_synthetic.py`
-generates a fake two-cycle dataset with the real files' exact headers, scores every
-proposed identity and course link against ground truth, requires every unflagged
-proposal to be correct, then checks the derived tables, rerun stability, and leakage.
-`tests/test_leakage.py` runs against your real `derived/` once it exists.
+`tests/pseudonymize/test_matching.py` covers the matching rules.
+`tests/pseudonymize/test_pipeline_synthetic.py` generates a fake two-cycle dataset
+with the real files' exact headers and runs it cycle by cycle as a user would. It
+scores every proposed identity and course link against ground truth, requires every
+unflagged proposal to be correct and every continuing teacher to be proposed under
+their earlier ID, then checks the derived tables, rerun stability, and leakage.
+`tests/pseudonymize/test_edge_cases.py` holds one small regression per defect,
+including the per-cycle folders and the copy from the old layout.
+`tests/pseudonymize/test_leakage.py` runs against every real `derived/<cycle>/` that
+exists.

@@ -129,8 +129,40 @@ def _dedupe(rows, label, policy, warnings):
     return out
 
 
+REQUIRED = {
+    "offerings": ("path", "name_col"),
+    "preferences": ("round", "path", "email_col", "rank_cols"),
+    "repeaters": ("path", "email_col"),
+    "placements": ("path", "code_col", "name_col", "sponsor_cols"),
+}
+
+
+def check_spec(key: str, spec) -> None:
+    """Refuse a cycle config that is missing a required setting, before any file is read."""
+    if not isinstance(spec, dict) or not spec:
+        raise SystemExit(f"{key}: no settings in the config")
+    if not spec.get("placements"):
+        raise SystemExit(f"{key}: placements is required")
+    for part, need in REQUIRED.items():
+        subs = spec.get(part) or []
+        for i, sub in enumerate(subs if isinstance(subs, list) else [subs]):
+            where = f"{key} {part}" + (f"[{i}]" if part == "preferences" else "")
+            if not isinstance(sub, dict):
+                raise SystemExit(f"{where}: expected a mapping of settings")
+            lacking = [k for k in need if not sub.get(k)]
+            if lacking:
+                raise SystemExit(f"{where}: missing {', '.join(lacking)}")
+    for i, p in enumerate(spec.get("preferences") or []):
+        if p["round"] not in ROUNDS:
+            raise SystemExit(
+                f"{key} preferences[{i}]: unknown round {p['round']!r}; "
+                f"use one of {sorted(ROUNDS)}"
+            )
+
+
 def load_cycle(cfg: dict, key: str) -> Cycle:
-    spec = cfg["cycles"][key]
+    spec = cfg["cycles"].get(key)
+    check_spec(key, spec)
     cy = Cycle(
         key=key,
         expected_sg_courses=spec.get("expected_sg_courses"),
@@ -187,11 +219,7 @@ def load_cycle(cfg: dict, key: str) -> Cycle:
 
     # ---- preference forms
     for p in spec.get("preferences") or []:
-        rnd = p["round"]
-        if rnd not in ROUNDS:
-            raise SystemExit(
-                f"{key}: unknown round {rnd!r}; use one of {sorted(ROUNDS)}"
-            )
+        rnd = p["round"]  # a known round: check_spec has looked
         if rnd in cy.rounds:
             raise SystemExit(f"{key}: round {rnd} configured twice")
         cy.rounds.append(rnd)
